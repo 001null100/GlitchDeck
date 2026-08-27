@@ -1,5 +1,8 @@
 #include "PluginEditor.h"
 
+#include <algorithm>
+#include <cmath>
+
 namespace
 {
 const auto background = juce::Colour(0xff0d1016);
@@ -62,9 +65,9 @@ void GlitchDeckAudioProcessorEditor::TriggerPad::paint(juce::Graphics& g)
     g.setColour(muted);
     g.setFont(juce::Font(12.0f));
     auto details = GlitchDeckAudioProcessor::quantizeNames()[juce::jlimit(0, 5, quantizeIndex)];
-    details += "  •  " + juce::String(length, length < 100.0f ? 1 : 0) + " ms";
+    details += "  |  " + juce::String(length, length < 100.0f ? 1 : 0) + " ms";
     if (latch)
-        details += "  •  LATCH";
+        details += "  |  LATCH";
     g.drawText(details, content.removeFromTop(24), juce::Justification::centredLeft, true);
 
     if (isActive)
@@ -87,18 +90,18 @@ void GlitchDeckAudioProcessorEditor::TriggerPad::mouseDown(const juce::MouseEven
 
 void GlitchDeckAudioProcessorEditor::TriggerPad::mouseUp(const juce::MouseEvent&)
 {
-    if (mouseHeld)
-    {
-        mouseHeld = false;
-        processor.setTriggerParameterFromUI(slot, false);
-        repaint();
-    }
+    if (! mouseHeld)
+        return;
+
+    mouseHeld = false;
+    processor.setTriggerParameterFromUI(slot, false);
+    repaint();
 }
 
 void GlitchDeckAudioProcessorEditor::TriggerPad::mouseExit(const juce::MouseEvent&)
 {
-    if (mouseHeld && ! isMouseButtonDownAnywhere())
-        mouseUp({});
+    // JUCE keeps mouse capture for a pressed component, so mouseUp still arrives
+    // after dragging outside. Do not synthesize a fake MouseEvent here.
 }
 
 void GlitchDeckAudioProcessorEditor::TriggerPad::setSelected(bool shouldBeSelected)
@@ -245,9 +248,8 @@ void GlitchDeckAudioProcessorEditor::paint(juce::Graphics& g)
     g.setColour(juce::Colour(0xff252f3c));
     g.drawRoundedRectangle(editPanel, 12.0f, 1.0f);
 
-    const auto y = editPanel.getY();
     g.setColour(selectedSlot % 2 == 0 ? accent.withAlpha(0.8f) : hot.withAlpha(0.75f));
-    g.fillRoundedRectangle(editPanel.getX(), y, 5.0f, editPanel.getHeight(), 2.5f);
+    g.fillRoundedRectangle(editPanel.getX(), editPanel.getY(), 5.0f, editPanel.getHeight(), 2.5f);
 }
 
 void GlitchDeckAudioProcessorEditor::resized()
@@ -391,8 +393,13 @@ void GlitchDeckAudioProcessorEditor::timerCallback()
     if (auto* focused = juce::Component::getCurrentlyFocusedComponent())
     {
         for (auto* component = focused; component != nullptr; component = component->getParentComponent())
+        {
             if (dynamic_cast<juce::TextEditor*>(component) != nullptr)
+            {
                 textEditorHasFocus = true;
+                break;
+            }
+        }
     }
 
     if (! hasKeyboardFocus(true) || textEditorHasFocus)

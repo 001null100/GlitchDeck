@@ -1,0 +1,104 @@
+name: Build and release
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: glitchdeck-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  JUCE_VERSION: 9.0.0
+  PLUGINVAL_VERSION: 1.0.4
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Cache JUCE source
+        id: juce-cache
+        uses: actions/cache@v5
+        with:
+          path: .cache/JUCE
+          key: juce-${{ runner.os }}-${{ env.JUCE_VERSION }}
+
+      - name: Fetch JUCE
+        if: steps.juce-cache.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force .cache | Out-Null
+          git clone --depth 1 --branch $env:JUCE_VERSION https://github.com/juce-framework/JUCE.git .cache/JUCE
+
+      - name: Configure VST3
+        shell: pwsh
+        run: cmake -S . -B build -G "Visual Studio 18 2026" -A x64 -DGLITCHDECK_JUCE_PATH="${{ github.workspace }}/.cache/JUCE"
+
+      - name: Build VST3
+        shell: pwsh
+        run: cmake --build build --config Release --parallel
+
+      - name: Validate VST3 with pluginval
+        shell: pwsh
+        run: |
+          $vst = Get-ChildItem -Path build -Recurse -Directory -Filter "GlitchDeck.vst3" | Select-Object -First 1
+          if (-not $vst) { throw "GlitchDeck.vst3 was not produced" }
+          Invoke-WebRequest "https://github.com/Tracktion/pluginval/releases/download/v$env:PLUGINVAL_VERSION/pluginval_Windows.zip" -OutFile pluginval.zip
+          Expand-Archive pluginval.zip -DestinationPath .pluginval -Force
+          $resultDir = Join-Path $PWD "pluginval-results"
+          New-Item -ItemType Directory -Force $resultDir | Out-Null
+          $pluginval = Join-Path $PWD ".pluginval/pluginval.exe"
+          $arguments = @(
+            "--validate-in-process",
+            "--strictness-level", "3",
+            "--output-dir", ('"' + $resultDir + '"'),
+            ('"' + $vst.FullName + '"')
+          )
+          $process = Start-Process -FilePath $pluginval -ArgumentList $arguments -PassThru -Wait -NoNewWindow
+          if ($process.ExitCode -ne 0) { throw "pluginval failed with exit code $($process.ExitCode)" }
+
+      - name: Package
+        shell: pwsh
+        run: |
+          $dist = Join-Path $PWD "dist"
+          New-Item -ItemType Directory -Force $dist | Out-Null
+          $vst = Get-ChildItem -Path build -Recurse -Directory -Filter "GlitchDeck.vst3" | Select-Object -First 1
+          if (-not $vst) { throw "GlitchDeck.vst3 was not produced" }
+          Compress-Archive -Path $vst.FullName -DestinationPath "$dist/GlitchDeck-Windows-VST3.zip" -Force
+          Copy-Item docs/TESTING.md "$dist/TESTING.md"
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: GlitchDeck-Windows
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload pluginval logs
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: GlitchDeck-pluginval
+          path: pluginval-results/*
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Publish v1 alpha release
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = "v1-alpha-${{ github.run_number }}"
+          gh release create $tag dist/* --prerelease --target "${{ github.sha }}" --title "GlitchDeck v1 alpha ${{ github.run_number }}" --notes "Automated Windows VST3 build from ${{ github.sha }}. The build passes pluginval strictness level 3 before publication. See TESTING.md for the focused performance test pass."

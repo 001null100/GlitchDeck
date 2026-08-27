@@ -1,0 +1,10 @@
+build/
+.cache/
+.vs/
+.idea/
+.vscode/
+*.user
+*.suo
+*.VC.db
+*.VC.opendb
+.DS_Store

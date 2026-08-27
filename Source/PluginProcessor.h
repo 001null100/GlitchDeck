@@ -65,16 +65,16 @@ private:
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
 
     void updateEngineConfigs();
-    void scanAutomationTriggers(const std::optional<juce::AudioPlayHead::PositionInfo>& position);
+    void scanAutomationTriggers(const juce::Optional<juce::AudioPlayHead::PositionInfo>& position);
     void scanMidiTriggers(const juce::MidiBuffer& midi,
-                          const std::optional<juce::AudioPlayHead::PositionInfo>& position);
+                          const juce::Optional<juce::AudioPlayHead::PositionInfo>& position);
     void scheduleTrigger(int slot, bool down, int sampleOffset,
-                         const std::optional<juce::AudioPlayHead::PositionInfo>& position);
+                         const juce::Optional<juce::AudioPlayHead::PositionInfo>& position);
     void cancelPendingOnset(int slot);
     void executePendingTriggersAt(std::int64_t absoluteSample);
     void applyTriggerNow(int slot, bool down);
     std::int64_t quantizedTargetSample(int slot, int sampleOffset,
-                                      const std::optional<juce::AudioPlayHead::PositionInfo>& position) const;
+                                      const juce::Optional<juce::AudioPlayHead::PositionInfo>& position) const;
 
     float parameterValue(int slot, const char* suffix) const noexcept;
     int parameterIntValue(int slot, const char* suffix) const noexcept;

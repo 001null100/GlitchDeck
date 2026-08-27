@@ -61,9 +61,9 @@ void GlitchDeckAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
 
     updateEngineConfigs();
 
-    std::optional<juce::AudioPlayHead::PositionInfo> position;
-    if (auto* playHead = getPlayHead())
-        position = playHead->getPosition();
+    juce::Optional<juce::AudioPlayHead::PositionInfo> position;
+    if (auto* audioPlayHead = getPlayHead())
+        position = audioPlayHead->getPosition();
 
     scanAutomationTriggers(position);
     scanMidiTriggers(midi, position);
@@ -223,7 +223,7 @@ void GlitchDeckAudioProcessor::updateEngineConfigs()
     }
 }
 
-void GlitchDeckAudioProcessor::scanAutomationTriggers(const std::optional<juce::AudioPlayHead::PositionInfo>& position)
+void GlitchDeckAudioProcessor::scanAutomationTriggers(const juce::Optional<juce::AudioPlayHead::PositionInfo>& position)
 {
     for (int slot = 0; slot < numSlots; ++slot)
     {
@@ -237,7 +237,7 @@ void GlitchDeckAudioProcessor::scanAutomationTriggers(const std::optional<juce::
 }
 
 void GlitchDeckAudioProcessor::scanMidiTriggers(const juce::MidiBuffer& midi,
-                                                const std::optional<juce::AudioPlayHead::PositionInfo>& position)
+                                                const juce::Optional<juce::AudioPlayHead::PositionInfo>& position)
 {
     for (const auto metadata : midi)
     {
@@ -258,7 +258,7 @@ void GlitchDeckAudioProcessor::scanMidiTriggers(const juce::MidiBuffer& midi,
 }
 
 void GlitchDeckAudioProcessor::scheduleTrigger(int slot, bool down, int sampleOffset,
-                                               const std::optional<juce::AudioPlayHead::PositionInfo>& position)
+                                               const juce::Optional<juce::AudioPlayHead::PositionInfo>& position)
 {
     if (! juce::isPositiveAndBelow(slot, numSlots))
         return;
@@ -324,16 +324,16 @@ void GlitchDeckAudioProcessor::applyTriggerNow(int slot, bool down)
 }
 
 std::int64_t GlitchDeckAudioProcessor::quantizedTargetSample(
-    int slot, int sampleOffset, const std::optional<juce::AudioPlayHead::PositionInfo>& position) const
+    int slot, int sampleOffset, const juce::Optional<juce::AudioPlayHead::PositionInfo>& position) const
 {
     const auto immediate = streamSampleCounter + sampleOffset;
     const auto quantizeIndex = juce::jlimit(0, 5, parameterIntValue(slot, "quantize"));
-    if (quantizeIndex == 0 || ! position.has_value() || ! position->getIsPlaying())
+    if (quantizeIndex == 0 || ! position || ! position->getIsPlaying())
         return immediate;
 
     const auto bpm = position->getBpm();
     const auto ppq = position->getPpqPosition();
-    if (! bpm.has_value() || ! ppq.has_value() || *bpm <= 0.0)
+    if (! bpm || ! ppq || *bpm <= 0.0)
         return immediate;
 
     constexpr std::array<double, 6> gridPpq { 0.0, 0.125, 0.25, 0.5, 1.0, 4.0 };

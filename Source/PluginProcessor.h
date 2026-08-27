@@ -62,9 +62,18 @@ private:
         std::int64_t targetSample = 0;
     };
 
+    struct UiTriggerEvent
+    {
+        int slot = 0;
+        bool down = false;
+    };
+
+    static constexpr unsigned int uiQueueCapacity = 64;
+
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
 
     void updateEngineConfigs();
+    void drainUiTriggers(const juce::Optional<juce::AudioPlayHead::PositionInfo>& position);
     void scanAutomationTriggers(const juce::Optional<juce::AudioPlayHead::PositionInfo>& position);
     void scanMidiTriggers(const juce::MidiBuffer& midi,
                           const juce::Optional<juce::AudioPlayHead::PositionInfo>& position);
@@ -86,6 +95,13 @@ private:
     std::array<bool, numSlots> lastAutomationDown {};
     std::array<std::atomic<bool>, numSlots> visibleActive {};
     std::array<PendingTrigger, 64> pendingTriggers {};
+
+    // Single producer (JUCE message thread) / single consumer (audio thread).
+    // Keeping UI trigger edges outside APVTS means a very fast click cannot
+    // disappear merely because down and up both happened between audio blocks.
+    std::array<UiTriggerEvent, uiQueueCapacity> uiTriggerQueue {};
+    std::atomic<unsigned int> uiQueueWrite { 0 };
+    std::atomic<unsigned int> uiQueueRead { 0 };
 
     std::int64_t streamSampleCounter = 0;
     double currentSampleRate = 44100.0;

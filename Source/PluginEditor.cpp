@@ -116,7 +116,6 @@ void GlitchDeckAudioProcessorEditor::TriggerPad::setSelected(bool shouldBeSelect
 GlitchDeckAudioProcessorEditor::GlitchDeckAudioProcessorEditor(GlitchDeckAudioProcessor& p)
     : AudioProcessorEditor(&p), processor(p), parameters(p.getValueTreeState())
 {
-    setSize(980, 660);
     setResizable(true, true);
     setResizeLimits(820, 570, 1500, 1000);
     setWantsKeyboardFocus(true);
@@ -203,6 +202,10 @@ GlitchDeckAudioProcessorEditor::GlitchDeckAudioProcessorEditor(GlitchDeckAudioPr
     releaseSlider.textFromValueFunction = [](double value) { return juce::String(value, value < 10.0 ? 1 : 0) + " ms"; };
 
     selectSlot(0);
+
+    // setSize() invokes resized() synchronously. Do this only after every child
+    // used by resized() has been constructed and added.
+    setSize(980, 660);
     startTimerHz(30);
     grabKeyboardFocus();
 }
@@ -275,6 +278,9 @@ void GlitchDeckAudioProcessorEditor::resized()
 
     for (int i = 0; i < GlitchDeckAudioProcessor::numSlots; ++i)
     {
+        if (pads[static_cast<size_t>(i)] == nullptr)
+            continue;
+
         const auto column = i % columns;
         const auto row = i / columns;
         pads[static_cast<size_t>(i)]->setBounds(
@@ -335,7 +341,8 @@ void GlitchDeckAudioProcessorEditor::selectSlot(int slot)
 {
     selectedSlot = juce::jlimit(0, GlitchDeckAudioProcessor::numSlots - 1, slot);
     for (int i = 0; i < GlitchDeckAudioProcessor::numSlots; ++i)
-        pads[static_cast<size_t>(i)]->setSelected(i == selectedSlot);
+        if (pads[static_cast<size_t>(i)] != nullptr)
+            pads[static_cast<size_t>(i)]->setSelected(i == selectedSlot);
 
     bindSelectedSlot();
     repaint();
@@ -383,7 +390,8 @@ void GlitchDeckAudioProcessorEditor::bindSelectedSlot()
 void GlitchDeckAudioProcessorEditor::timerCallback()
 {
     for (auto& pad : pads)
-        pad->repaint();
+        if (pad != nullptr)
+            pad->repaint();
 
     selectedLabel.setText("TRIGGER " + juce::String(selectedSlot + 1) + "  /  "
                               + processor.getEffectNameForSlot(selectedSlot).toUpperCase(),

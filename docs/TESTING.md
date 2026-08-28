@@ -61,14 +61,19 @@ Enable Latch on a slot. A short press should toggle the effect on; the next pres
 
 With Bitwig playing, test Free, 1/16, 1/8, and 1/4. Onsets should wait for the selected host grid boundary. Release is intentionally immediate in this alpha.
 
+Also test **1 Bar** in both 4/4 and a non-4/4 meter such as 3/4 or 7/8. The onset should follow Bitwig's current bar boundaries rather than assuming four quarter-note beats.
+
 ## 7. MIDI remap
 
 Use Learn to bind one slot to a different CC or Note message. Verify the old binding stops addressing it and the new binding starts addressing it. Also verify channel filtering works with a different MIDI channel.
+
+While Learn is armed, select a different trigger with right-click. Learn should cancel rather than remain invisibly armed on the previous trigger. Right-clicking a pad should select it without firing its glitch; left-click still performs the pad.
 
 ## 8. UI / keyboard / automation
 
 - Pads should visibly light while active.
 - Clicking and holding a pad should behave like holding MIDI.
+- Right-clicking a pad should select it without triggering audio.
 - Number keys 1-8 should trigger slots only while the plugin UI owns keyboard focus.
 - Changing the selected slot should retarget the lower editor without changing audio state.
 - Host automation of Trigger 1-8 should create the same performance edges as UI/MIDI triggering.

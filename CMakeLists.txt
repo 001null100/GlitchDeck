@@ -8,11 +8,11 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 include(FetchContent)
 
 # Pin host plumbing to the exact null-clap revision validated for GlitchDeck's
-# raw MIDI note port and process/transport context requirements.
+# raw MIDI note port, process/transport context, and process event routing.
 FetchContent_Declare(
     null_clap
     GIT_REPOSITORY https://github.com/001null100/null-clap.git
-    GIT_TAG 9dab47ab846c29ad8d0fc95345e6b601223b4929
+    GIT_TAG ddc3989229bdc4eb66fff6937fcaeaf9080532fb
     GIT_SHALLOW FALSE
 )
 set(NULLCLAP_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)

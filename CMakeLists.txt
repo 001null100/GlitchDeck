@@ -6,6 +6,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 include(FetchContent)
+include(CTest)
 
 # Pin host plumbing to the exact null-clap revision validated for GlitchDeck's
 # raw MIDI note port, process/transport context, process event routing, and
@@ -57,4 +58,14 @@ target_compile_definitions(GlitchDeck PRIVATE
 
 if(MSVC)
     target_compile_options(GlitchDeck PRIVATE /utf-8)
+endif()
+
+if(BUILD_TESTING)
+    add_executable(GlitchEngineTests
+        tests/GlitchEngineTests.cpp
+        Source/GlitchEngine.cpp
+        Source/GlitchEngine.h
+    )
+    target_include_directories(GlitchEngineTests PRIVATE Source)
+    add_test(NAME GlitchEngineTests COMMAND GlitchEngineTests)
 endif()

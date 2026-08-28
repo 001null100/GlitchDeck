@@ -1,13 +1,12 @@
 # GlitchDeck V1 alpha test pass
 
-For Bitwig, test the **CLAP build first**. Put GlitchDeck after an audio-producing instrument/effect chain, feed it something rhythmically obvious, and keep the transport running.
+Put the native `GlitchDeck.clap` after an audio-producing instrument/effect chain in Bitwig, feed it something rhythmically obvious, and keep the transport running.
 
 ## 1. Basic load
 
 - Confirm `GlitchDeck.clap` scans and opens without warnings.
 - Confirm dry audio passes unchanged when no trigger is active.
 - Confirm Global Mix at 0% is clean and 100% is fully available to the gestures.
-- The VST3 build should still load, but direct CC Learn is not the primary VST3 test path.
 
 ## 2. Direct controller input / MIDI Learn
 
@@ -22,7 +21,7 @@ GlitchDeck defaults to:
 7. CC26, channel 16: Bitcrush
 8. CC27, channel 16: Dropout
 
-With the CLAP build loaded, press and release each configured pad. A Nektar `Trg` pad should send 127 on press and 0 on release, so the effect should follow the physical hold exactly.
+Press and release each configured pad. A Nektar `Trg` pad should send 127 on press and 0 on release, so the effect should follow the physical hold exactly.
 
 Then test Learn explicitly:
 
@@ -31,7 +30,7 @@ Then test Learn explicitly:
 3. Hit any configured pad.
 4. Confirm the binding updates immediately, for example `CC 20 · CH 16`.
 
-If Learn stays waiting on the CLAP build, report that specifically. It means the CLAP event path still is not reaching GlitchDeck and is the highest-priority bug.
+If Learn stays waiting, report that specifically. It means the raw CLAP MIDI event path is not reaching GlitchDeck and is the highest-priority bug.
 
 ## 3. Combinations
 
@@ -55,24 +54,20 @@ With Bitwig playing, test Free, 1/16, 1/8, and 1/4. Onsets should wait for the s
 
 ## 6. MIDI remap
 
-Use Learn to bind one slot to a different CC or Note message. Verify the old binding stops addressing it and the new binding starts addressing it. Also verify that channel filtering works by learning or manually setting a different MIDI channel.
+Use Learn to bind one slot to a different CC or Note message. Verify the old binding stops addressing it and the new binding starts addressing it. Also verify channel filtering works with a different MIDI channel.
 
-## 7. UI / keyboard
+## 7. UI / keyboard / automation
 
 - Pads should visibly light while active.
 - Clicking and holding a pad should behave like holding MIDI.
 - Number keys 1-8 should trigger slots only while the plugin UI owns keyboard focus.
 - Changing the selected slot should retarget the lower editor without changing audio state.
+- Host automation of Trigger 1-8 should create the same performance edges as UI/MIDI triggering.
 
-## 8. VST3 comparison
-
-Load the VST3 only after the CLAP pass. Mouse/keyboard/automation triggering should still work. Raw controller CC Learn may not work in VST3 because the format routes CC through host parameter mapping rather than ordinary plugin MIDI events; that limitation is one reason CLAP is now the preferred Bitwig format.
-
-## 9. Things worth reporting precisely
+## 8. Things worth reporting precisely
 
 For timing or audio bugs, note:
 
-- plugin format: CLAP or VST3
 - Bitwig buffer size / sample rate
 - effect(s) active
 - hold vs latch

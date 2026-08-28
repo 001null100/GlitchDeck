@@ -78,7 +78,7 @@ private:
     void registerRemoteControls();
     void updateEngineConfigs() noexcept;
 
-    void drainUiTriggers() noexcept;
+    void drainUiTriggers(std::uint32_t eventTime) noexcept;
     bool tryCaptureMidiLearn(std::uint8_t status, std::uint8_t data1, std::uint8_t data2) noexcept;
     void handleMidiEvent(const clap_event_midi_t& event) noexcept;
     void handleParameterEvent(const clap_event_param_value_t& event) noexcept;

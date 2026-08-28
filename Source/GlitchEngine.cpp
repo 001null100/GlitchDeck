@@ -107,10 +107,10 @@ void GlitchEngine::trigger(int slotIndex, bool down) noexcept
                 anotherTransportIsActive |= other.active && isTransportEffect(other.config.effect);
             }
 
-            if (slot.config.effect == EffectType::tapeStop && !anotherTransportIsActive)
-                startStreamingTransport();
-            else if (isLoopDefiningEffect(slot.config.effect))
+            if (isLoopDefiningEffect(slot.config.effect))
                 captureLoopForSlot(slotIndex);
+            else if (!anotherTransportIsActive)
+                startStreamingTransport();
             else
                 transportEngaged = true;
         }
@@ -140,10 +140,7 @@ bool GlitchEngine::isTransportEffect(EffectType type) noexcept
 bool GlitchEngine::isLoopDefiningEffect(EffectType type) noexcept
 {
     return type == EffectType::stutter
-        || type == EffectType::microloop
-        || type == EffectType::reverse
-        || type == EffectType::pitchDive
-        || type == EffectType::pitchRise;
+        || type == EffectType::microloop;
 }
 
 int GlitchEngine::wrapIndex(int index) const noexcept
@@ -217,17 +214,20 @@ void GlitchEngine::startStreamingTransport() noexcept
 void GlitchEngine::refreshTransportAfterRelease() noexcept
 {
     bool anyLoop = false;
-    bool anyTape = false;
+    bool anyTransport = false;
     for (const auto& slot : slots)
     {
-        if (!slot.active)
+        if (!slot.active || !isTransportEffect(slot.config.effect))
             continue;
+        anyTransport = true;
         anyLoop |= isLoopDefiningEffect(slot.config.effect);
-        anyTape |= slot.config.effect == EffectType::tapeStop;
     }
 
-    if (!anyLoop && anyTape)
+    if (!anyLoop && anyTransport)
+    {
         streamingTransport = true;
+        transportEngaged = true;
+    }
 }
 
 GlitchEngine::StereoSample GlitchEngine::processSample(float dryLeft, float dryRight, float globalMix) noexcept

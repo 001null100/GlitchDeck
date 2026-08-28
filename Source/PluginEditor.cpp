@@ -46,9 +46,7 @@ void GlitchDeckAudioProcessorEditor::TriggerPad::paint(juce::Graphics& g)
     g.setColour(isActive ? hot : muted);
     g.setFont(juce::Font(12.0f, juce::Font::bold));
     g.drawText(juce::String(slot + 1), top.removeFromLeft(32), juce::Justification::centredLeft);
-
-    const auto midi = processor.getMidiNoteForSlot(slot);
-    g.drawText(GlitchDeckAudioProcessor::midiNoteName(midi), top, juce::Justification::centredRight);
+    g.drawText(processor.getMidiBindingTextForSlot(slot), top, juce::Justification::centredRight, true);
 
     content.removeFromTop(10);
     g.setColour(text);
@@ -162,7 +160,7 @@ GlitchDeckAudioProcessorEditor::GlitchDeckAudioProcessorEditor(GlitchDeckAudioPr
     styleLabel(effectLabel, "EFFECT");
     styleLabel(quantizeLabel, "QUANTIZE");
     styleLabel(stereoLabel, "STEREO");
-    styleLabel(midiLabel, "MIDI NOTE");
+    styleLabel(midiLabel, "PAD / MIDI BINDING");
     styleLabel(intensityLabel, "INTENSITY");
     styleLabel(lengthLabel, "LENGTH");
     styleLabel(attackLabel, "ATTACK");
@@ -178,16 +176,17 @@ GlitchDeckAudioProcessorEditor::GlitchDeckAudioProcessorEditor(GlitchDeckAudioPr
     latchButton.setColour(juce::ToggleButton::tickDisabledColourId, muted);
     addAndMakeVisible(latchButton);
 
-    midiNoteSlider.setSliderStyle(juce::Slider::LinearHorizontal);
-    midiNoteSlider.setTextBoxStyle(juce::Slider::TextBoxRight, false, 86, 22);
-    midiNoteSlider.setColour(juce::Slider::trackColourId, accent);
-    midiNoteSlider.setColour(juce::Slider::thumbColourId, text);
-    midiNoteSlider.textFromValueFunction = [](double value)
+    midiLearnButton.setColour(juce::TextButton::buttonColourId, panelRaised);
+    midiLearnButton.setColour(juce::TextButton::buttonOnColourId, hot.withAlpha(0.25f));
+    midiLearnButton.setColour(juce::TextButton::textColourOffId, text);
+    midiLearnButton.setColour(juce::TextButton::textColourOnId, hot);
+    midiLearnButton.setWantsKeyboardFocus(false);
+    midiLearnButton.onClick = [this]
     {
-        const auto note = juce::jlimit(0, 127, static_cast<int>(std::round(value)));
-        return GlitchDeckAudioProcessor::midiNoteName(note) + "  " + juce::String(note);
+        processor.toggleMidiLearn(selectedSlot);
+        refreshMidiLearnButton();
     };
-    addAndMakeVisible(midiNoteSlider);
+    addAndMakeVisible(midiLearnButton);
 
     configureKnob(intensitySlider, "INTENSITY");
     configureKnob(lengthSlider, "LENGTH");
@@ -298,7 +297,7 @@ void GlitchDeckAudioProcessorEditor::resized()
 
     auto strip = editor.removeFromTop(72);
     const auto stripGap = 10;
-    const auto firstWidth = std::max(125, (strip.getWidth() - stripGap * 4) / 5);
+    const auto firstWidth = std::max(118, (strip.getWidth() - stripGap * 4) / 5);
 
     auto placeField = [&](juce::Label& label, juce::Component& component, int width)
     {
@@ -311,7 +310,7 @@ void GlitchDeckAudioProcessorEditor::resized()
     placeField(effectLabel, effectBox, firstWidth);
     placeField(quantizeLabel, quantizeBox, firstWidth);
     placeField(stereoLabel, stereoBox, firstWidth);
-    placeField(midiLabel, midiNoteSlider, firstWidth + 20);
+    placeField(midiLabel, midiLearnButton, firstWidth + 50);
 
     auto latchCell = strip;
     latchCell.removeFromTop(17);
@@ -345,6 +344,7 @@ void GlitchDeckAudioProcessorEditor::selectSlot(int slot)
             pads[static_cast<size_t>(i)]->setSelected(i == selectedSlot);
 
     bindSelectedSlot();
+    refreshMidiLearnButton();
     repaint();
 }
 
@@ -354,7 +354,6 @@ void GlitchDeckAudioProcessorEditor::bindSelectedSlot()
     quantizeAttachment.reset();
     stereoAttachment.reset();
     latchAttachment.reset();
-    midiAttachment.reset();
     intensityAttachment.reset();
     lengthAttachment.reset();
     attackAttachment.reset();
@@ -373,8 +372,6 @@ void GlitchDeckAudioProcessorEditor::bindSelectedSlot()
         GlitchDeckAudioProcessor::slotParameterId(selectedSlot, "stereo"), stereoBox);
     latchAttachment = std::make_unique<ButtonAttachment>(parameters,
         GlitchDeckAudioProcessor::slotParameterId(selectedSlot, "latch"), latchButton);
-    midiAttachment = std::make_unique<SliderAttachment>(parameters,
-        GlitchDeckAudioProcessor::slotParameterId(selectedSlot, "midi"), midiNoteSlider);
     intensityAttachment = std::make_unique<SliderAttachment>(parameters,
         GlitchDeckAudioProcessor::slotParameterId(selectedSlot, "intensity"), intensitySlider);
     lengthAttachment = std::make_unique<SliderAttachment>(parameters,
@@ -387,8 +384,19 @@ void GlitchDeckAudioProcessorEditor::bindSelectedSlot()
         GlitchDeckAudioProcessor::slotParameterId(selectedSlot, "shape"), shapeSlider);
 }
 
+void GlitchDeckAudioProcessorEditor::refreshMidiLearnButton()
+{
+    const auto learning = processor.isMidiLearning(selectedSlot);
+    midiLearnButton.setToggleState(learning, juce::dontSendNotification);
+    midiLearnButton.setButtonText(learning
+        ? "LEARNING… HIT A PAD"
+        : "LEARN  ·  " + processor.getMidiBindingTextForSlot(selectedSlot));
+}
+
 void GlitchDeckAudioProcessorEditor::timerCallback()
 {
+    processor.applyPendingMidiLearn();
+
     for (auto& pad : pads)
         if (pad != nullptr)
             pad->repaint();
@@ -396,6 +404,7 @@ void GlitchDeckAudioProcessorEditor::timerCallback()
     selectedLabel.setText("TRIGGER " + juce::String(selectedSlot + 1) + "  /  "
                               + processor.getEffectNameForSlot(selectedSlot).toUpperCase(),
                           juce::dontSendNotification);
+    refreshMidiLearnButton();
 
     bool textEditorHasFocus = false;
     if (auto* focused = juce::Component::getCurrentlyFocusedComponent())

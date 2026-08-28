@@ -28,6 +28,9 @@ void GlitchDeckAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBl
     streamSampleCounter = 0;
     pendingTriggers = {};
     lastAutomationDown = {};
+    lastCcDown = {};
+    uiQueueRead.store(0, std::memory_order_relaxed);
+    uiQueueWrite.store(0, std::memory_order_relaxed);
 
     engine.prepare(currentSampleRate, samplesPerBlock, getTotalNumOutputChannels());
     updateEngineConfigs();
@@ -65,6 +68,7 @@ void GlitchDeckAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
     if (auto* audioPlayHead = getPlayHead())
         position = audioPlayHead->getPosition();
 
+    drainUiTriggers(position);
     scanAutomationTriggers(position);
     scanMidiTriggers(midi, position);
 
@@ -103,6 +107,9 @@ void GlitchDeckAudioProcessor::setStateInformation(const void* data, int sizeInB
 
     pendingTriggers = {};
     lastAutomationDown = {};
+    lastCcDown = {};
+    midiLearnSlot.store(-1, std::memory_order_relaxed);
+    learnedSlot.store(-1, std::memory_order_relaxed);
     engine.reset();
     updateEngineConfigs();
 }
@@ -127,6 +134,11 @@ juce::StringArray GlitchDeckAudioProcessor::stereoNames()
     return { "Linked", "Spread", "Swap", "Mono" };
 }
 
+juce::StringArray GlitchDeckAudioProcessor::midiBindingTypeNames()
+{
+    return { "Note", "CC" };
+}
+
 juce::String GlitchDeckAudioProcessor::midiNoteName(int midiNote)
 {
     return juce::MidiMessage::getMidiNoteName(juce::jlimit(0, 127, midiNote), true, true, 3);
@@ -143,6 +155,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout GlitchDeckAudioProcessor::cr
     const auto effects = effectNames();
     const auto quantize = quantizeNames();
     const auto stereo = stereoNames();
+    const auto midiTypes = midiBindingTypeNames();
 
     for (int slot = 0; slot < numSlots; ++slot)
     {
@@ -157,8 +170,16 @@ juce::AudioProcessorValueTreeState::ParameterLayout GlitchDeckAudioProcessor::cr
         result.push_back(std::make_unique<juce::AudioParameterBool>(
             juce::ParameterID { slotParameterId(slot, "latch"), 1 }, prefix + "Latch", false));
 
+        result.push_back(std::make_unique<juce::AudioParameterChoice>(
+            juce::ParameterID { slotParameterId(slot, "midiType"), 1 }, prefix + "MIDI Type", midiTypes, 1));
+
+        // Default deck binding: CC20-27 on MIDI channel 16. This deliberately
+        // avoids stealing C1-G1 from the musical keybed.
         result.push_back(std::make_unique<juce::AudioParameterInt>(
-            juce::ParameterID { slotParameterId(slot, "midi"), 1 }, prefix + "MIDI Note", 0, 127, 36 + slot));
+            juce::ParameterID { slotParameterId(slot, "midi"), 1 }, prefix + "MIDI Number", 0, 127, 20 + slot));
+
+        result.push_back(std::make_unique<juce::AudioParameterInt>(
+            juce::ParameterID { slotParameterId(slot, "midiChannel"), 1 }, prefix + "MIDI Channel", 0, 16, 16));
 
         result.push_back(std::make_unique<juce::AudioParameterChoice>(
             juce::ParameterID { slotParameterId(slot, "quantize"), 1 }, prefix + "Quantize", quantize, 0));
@@ -223,6 +244,26 @@ void GlitchDeckAudioProcessor::updateEngineConfigs()
     }
 }
 
+void GlitchDeckAudioProcessor::drainUiTriggers(const juce::Optional<juce::AudioPlayHead::PositionInfo>& position)
+{
+    auto read = uiQueueRead.load(std::memory_order_relaxed);
+    const auto write = uiQueueWrite.load(std::memory_order_acquire);
+
+    while (read != write)
+    {
+        const auto event = uiTriggerQueue[read];
+        if (juce::isPositiveAndBelow(event.slot, numSlots))
+        {
+            lastAutomationDown[static_cast<size_t>(event.slot)] = event.down;
+            scheduleTrigger(event.slot, event.down, 0, position);
+        }
+
+        read = (read + 1u) % uiQueueCapacity;
+    }
+
+    uiQueueRead.store(read, std::memory_order_release);
+}
+
 void GlitchDeckAudioProcessor::scanAutomationTriggers(const juce::Optional<juce::AudioPlayHead::PositionInfo>& position)
 {
     for (int slot = 0; slot < numSlots; ++slot)
@@ -236,23 +277,73 @@ void GlitchDeckAudioProcessor::scanAutomationTriggers(const juce::Optional<juce:
     }
 }
 
+bool GlitchDeckAudioProcessor::tryCaptureMidiLearn(const juce::MidiMessage& message) noexcept
+{
+    const auto slot = midiLearnSlot.load(std::memory_order_acquire);
+    if (! juce::isPositiveAndBelow(slot, numSlots))
+        return false;
+
+    int type = -1;
+    int number = 0;
+
+    if (message.isNoteOn())
+    {
+        type = static_cast<int>(MidiBindingType::Note);
+        number = message.getNoteNumber();
+    }
+    else if (message.isController() && message.getControllerValue() >= 64)
+    {
+        type = static_cast<int>(MidiBindingType::CC);
+        number = message.getControllerNumber();
+    }
+
+    if (type < 0)
+        return false;
+
+    learnedType.store(type, std::memory_order_relaxed);
+    learnedNumber.store(number, std::memory_order_relaxed);
+    learnedChannel.store(message.getChannel(), std::memory_order_relaxed);
+    learnedSlot.store(slot, std::memory_order_release);
+    midiLearnSlot.store(-1, std::memory_order_release);
+    return true;
+}
+
 void GlitchDeckAudioProcessor::scanMidiTriggers(const juce::MidiBuffer& midi,
                                                 const juce::Optional<juce::AudioPlayHead::PositionInfo>& position)
 {
     for (const auto metadata : midi)
     {
         const auto message = metadata.getMessage();
-        if (! message.isNoteOnOrOff())
+
+        // The gesture used to teach a mapping is swallowed by GlitchDeck so it
+        // cannot accidentally fire an old binding while LEARN is active.
+        if (tryCaptureMidiLearn(message))
             continue;
 
-        const auto note = message.getNoteNumber();
         for (int slot = 0; slot < numSlots; ++slot)
         {
-            if (note != getMidiNoteForSlot(slot))
+            const auto configuredChannel = juce::jlimit(0, 16, parameterIntValue(slot, "midiChannel"));
+            if (configuredChannel != 0 && message.getChannel() != configuredChannel)
                 continue;
 
-            scheduleTrigger(slot, message.isNoteOn(), metadata.samplePosition, position);
-            break;
+            const auto bindingType = juce::jlimit(0, 1, parameterIntValue(slot, "midiType"));
+            const auto number = juce::jlimit(0, 127, parameterIntValue(slot, "midi"));
+
+            if (bindingType == static_cast<int>(MidiBindingType::Note))
+            {
+                if (message.isNoteOnOrOff() && message.getNoteNumber() == number)
+                    scheduleTrigger(slot, message.isNoteOn(), metadata.samplePosition, position);
+            }
+            else if (message.isController() && message.getControllerNumber() == number)
+            {
+                const auto down = message.getControllerValue() >= 64;
+                auto& previous = lastCcDown[static_cast<size_t>(slot)];
+                if (down != previous)
+                {
+                    previous = down;
+                    scheduleTrigger(slot, down, metadata.samplePosition, position);
+                }
+            }
         }
     }
 }
@@ -350,6 +441,16 @@ void GlitchDeckAudioProcessor::setTriggerParameterFromUI(int slot, bool down)
     if (! juce::isPositiveAndBelow(slot, numSlots))
         return;
 
+    // Queue the edge independently from the parameter value. The host-facing
+    // parameter remains useful for automation while fast UI clicks remain safe.
+    const auto write = uiQueueWrite.load(std::memory_order_relaxed);
+    const auto next = (write + 1u) % uiQueueCapacity;
+    if (next != uiQueueRead.load(std::memory_order_acquire))
+    {
+        uiTriggerQueue[write] = { slot, down };
+        uiQueueWrite.store(next, std::memory_order_release);
+    }
+
     if (auto* parameter = parameters.getParameter(slotParameterId(slot, "trigger")))
     {
         if (down)
@@ -362,17 +463,65 @@ void GlitchDeckAudioProcessor::setTriggerParameterFromUI(int slot, bool down)
     }
 }
 
+void GlitchDeckAudioProcessor::toggleMidiLearn(int slot) noexcept
+{
+    if (! juce::isPositiveAndBelow(slot, numSlots))
+        return;
+
+    const auto current = midiLearnSlot.load(std::memory_order_relaxed);
+    midiLearnSlot.store(current == slot ? -1 : slot, std::memory_order_release);
+}
+
+bool GlitchDeckAudioProcessor::isMidiLearning(int slot) const noexcept
+{
+    return midiLearnSlot.load(std::memory_order_acquire) == slot;
+}
+
+void GlitchDeckAudioProcessor::setParameterPlainFromMessageThread(int slot, const char* suffix, float plainValue)
+{
+    if (auto* parameter = parameters.getParameter(slotParameterId(slot, suffix)))
+    {
+        parameter->beginChangeGesture();
+        parameter->setValueNotifyingHost(parameter->convertTo0to1(plainValue));
+        parameter->endChangeGesture();
+    }
+}
+
+void GlitchDeckAudioProcessor::applyPendingMidiLearn()
+{
+    const auto slot = learnedSlot.exchange(-1, std::memory_order_acq_rel);
+    if (! juce::isPositiveAndBelow(slot, numSlots))
+        return;
+
+    setParameterPlainFromMessageThread(slot, "midiType", static_cast<float>(learnedType.load(std::memory_order_relaxed)));
+    setParameterPlainFromMessageThread(slot, "midi", static_cast<float>(learnedNumber.load(std::memory_order_relaxed)));
+    setParameterPlainFromMessageThread(slot, "midiChannel", static_cast<float>(learnedChannel.load(std::memory_order_relaxed)));
+    lastCcDown[static_cast<size_t>(slot)] = false;
+}
+
+juce::String GlitchDeckAudioProcessor::getMidiBindingTextForSlot(int slot) const
+{
+    if (! juce::isPositiveAndBelow(slot, numSlots))
+        return "UNBOUND";
+
+    const auto type = juce::jlimit(0, 1, parameterIntValue(slot, "midiType"));
+    const auto number = juce::jlimit(0, 127, parameterIntValue(slot, "midi"));
+    const auto channel = juce::jlimit(0, 16, parameterIntValue(slot, "midiChannel"));
+
+    juce::String result;
+    if (type == static_cast<int>(MidiBindingType::CC))
+        result = "CC " + juce::String(number);
+    else
+        result = midiNoteName(number) + " (" + juce::String(number) + ")";
+
+    result += channel == 0 ? "  ·  OMNI" : "  ·  CH " + juce::String(channel);
+    return result;
+}
+
 bool GlitchDeckAudioProcessor::isSlotActive(int slot) const noexcept
 {
     return juce::isPositiveAndBelow(slot, numSlots)
         && visibleActive[static_cast<size_t>(slot)].load(std::memory_order_relaxed);
-}
-
-int GlitchDeckAudioProcessor::getMidiNoteForSlot(int slot) const noexcept
-{
-    if (! juce::isPositiveAndBelow(slot, numSlots))
-        return 36;
-    return juce::jlimit(0, 127, parameterIntValue(slot, "midi"));
 }
 
 int GlitchDeckAudioProcessor::getEffectIndexForSlot(int slot) const noexcept

@@ -47,6 +47,7 @@ private:
     void configureKnob(juce::Slider& slider, const juce::String& name);
     void configureCombo(juce::ComboBox& box, const juce::String& name);
     void releaseKeyboardTriggers();
+    void refreshMidiLearnButton();
 
     GlitchDeckAudioProcessor& processor;
     juce::AudioProcessorValueTreeState& parameters;
@@ -67,7 +68,7 @@ private:
     juce::ComboBox quantizeBox;
     juce::ComboBox stereoBox;
     juce::ToggleButton latchButton { "LATCH" };
-    juce::Slider midiNoteSlider;
+    juce::TextButton midiLearnButton;
 
     juce::Slider intensitySlider;
     juce::Slider lengthSlider;
@@ -89,7 +90,6 @@ private:
     std::unique_ptr<ComboAttachment> quantizeAttachment;
     std::unique_ptr<ComboAttachment> stereoAttachment;
     std::unique_ptr<ButtonAttachment> latchAttachment;
-    std::unique_ptr<SliderAttachment> midiAttachment;
     std::unique_ptr<SliderAttachment> intensityAttachment;
     std::unique_ptr<SliderAttachment> lengthAttachment;
     std::unique_ptr<SliderAttachment> attackAttachment;

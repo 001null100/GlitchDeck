@@ -14,9 +14,6 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  JUCE_VERSION: 9.0.0
-  PLUGINVAL_VERSION: 1.0.4
-  CLAP_JUCE_COMMIT: c1a5ad025f95d01e03267857fa8276ebeed16500
   CLAP_VALIDATOR_VERSION: 0.4.1
   CLAP_VALIDATOR_BUILD: 0.4.1-127-g152b982
 
@@ -29,64 +26,17 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
-      - name: Cache JUCE source
-        id: juce-cache
-        uses: actions/cache@v5
-        with:
-          path: .cache/JUCE
-          key: juce-${{ runner.os }}-${{ env.JUCE_VERSION }}
-
-      - name: Fetch JUCE
-        if: steps.juce-cache.outputs.cache-hit != 'true'
+      - name: Configure native CLAP
         shell: pwsh
-        run: |
-          New-Item -ItemType Directory -Force .cache | Out-Null
-          git clone --depth 1 --branch $env:JUCE_VERSION https://github.com/juce-framework/JUCE.git .cache/JUCE
+        run: cmake -S . -B build -G "Visual Studio 18 2026" -A x64
 
-      - name: Cache CLAP JUCE extensions
-        id: clap-juce-cache
-        uses: actions/cache@v5
-        with:
-          path: .cache/clap-juce-extensions
-          key: clap-juce-${{ runner.os }}-${{ env.CLAP_JUCE_COMMIT }}
-
-      - name: Fetch CLAP JUCE extensions
-        if: steps.clap-juce-cache.outputs.cache-hit != 'true'
-        shell: pwsh
-        run: |
-          git clone https://github.com/free-audio/clap-juce-extensions.git .cache/clap-juce-extensions
-          git -C .cache/clap-juce-extensions checkout $env:CLAP_JUCE_COMMIT
-          git -C .cache/clap-juce-extensions submodule update --init --recursive --depth 1
-
-      - name: Configure VST3 and CLAP
-        shell: pwsh
-        run: >-
-          cmake -S . -B build -G "Visual Studio 18 2026" -A x64
-          -DGLITCHDECK_JUCE_PATH="${{ github.workspace }}/.cache/JUCE"
-          -DGLITCHDECK_CLAP_JUCE_PATH="${{ github.workspace }}/.cache/clap-juce-extensions"
-
-      - name: Build VST3 and CLAP
+      - name: Build GlitchDeck
         shell: pwsh
         run: cmake --build build --config Release --parallel
 
-      - name: Validate VST3 with pluginval
+      - name: Test GlitchEngine
         shell: pwsh
-        run: |
-          $vst = Get-ChildItem -Path build -Recurse -Directory -Filter "GlitchDeck.vst3" | Select-Object -First 1
-          if (-not $vst) { throw "GlitchDeck.vst3 was not produced" }
-          Invoke-WebRequest "https://github.com/Tracktion/pluginval/releases/download/v$env:PLUGINVAL_VERSION/pluginval_Windows.zip" -OutFile pluginval.zip
-          Expand-Archive pluginval.zip -DestinationPath .pluginval -Force
-          $resultDir = Join-Path $PWD "pluginval-results"
-          New-Item -ItemType Directory -Force $resultDir | Out-Null
-          $pluginval = Join-Path $PWD ".pluginval/pluginval.exe"
-          $arguments = @(
-            "--validate-in-process",
-            "--strictness-level", "3",
-            "--output-dir", ('"' + $resultDir + '"'),
-            ('"' + $vst.FullName + '"')
-          )
-          $process = Start-Process -FilePath $pluginval -ArgumentList $arguments -PassThru -Wait -NoNewWindow
-          if ($process.ExitCode -ne 0) { throw "pluginval failed with exit code $($process.ExitCode)" }
+        run: ctest --test-dir build -C Release --output-on-failure
 
       - name: Validate CLAP
         shell: pwsh
@@ -106,41 +56,39 @@ jobs:
         run: |
           $dist = Join-Path $PWD "dist"
           New-Item -ItemType Directory -Force $dist | Out-Null
-
-          $vst = Get-ChildItem -Path build -Recurse -Directory -Filter "GlitchDeck.vst3" | Select-Object -First 1
-          if (-not $vst) { throw "GlitchDeck.vst3 was not produced" }
-          Compress-Archive -Path $vst.FullName -DestinationPath "$dist/GlitchDeck-Windows-VST3.zip" -Force
-
           $clap = Get-ChildItem -Path build -Recurse -File -Filter "GlitchDeck.clap" | Select-Object -First 1
           if (-not $clap) { throw "GlitchDeck.clap was not produced" }
           Copy-Item $clap.FullName "$dist/GlitchDeck.clap" -Force
           Compress-Archive -Path "$dist/GlitchDeck.clap" -DestinationPath "$dist/GlitchDeck-Windows-CLAP.zip" -Force
-
           Copy-Item docs/TESTING.md "$dist/TESTING.md"
           Copy-Item docs/MIDI_SETUP.md "$dist/MIDI_SETUP.md"
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v6
         with:
-          name: GlitchDeck-Windows
+          name: GlitchDeck-Windows-CLAP
           path: dist/*
           if-no-files-found: error
           retention-days: 14
 
-      - name: Upload pluginval logs
-        if: always()
-        uses: actions/upload-artifact@v6
-        with:
-          name: GlitchDeck-pluginval
-          path: pluginval-results/*
-          if-no-files-found: ignore
-          retention-days: 14
-
       - name: Publish v1 alpha release
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: >-
+          (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+          (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $tag = "v1-alpha-${{ github.run_number }}"
-          gh release create $tag dist/* --prerelease --target "${{ github.sha }}" --title "GlitchDeck v1 alpha ${{ github.run_number }}" --notes "Automated Windows CLAP + VST3 build from ${{ github.sha }}. CLAP is the preferred Bitwig format for direct MIDI CC pad learn. VST3 passes pluginval strictness 3 and CLAP passes clap-validator before publication. See TESTING.md and MIDI_SETUP.md."
+          if ("${{ github.event_name }}" -eq "pull_request") {
+            $tag = "v1-alpha-pr${{ github.event.pull_request.number }}-${{ github.run_number }}"
+            $target = "${{ github.event.pull_request.head.sha }}"
+            $title = "GlitchDeck v1 alpha PR #${{ github.event.pull_request.number }} build ${{ github.run_number }}"
+            $notes = "Validated native null-clap Windows build from PR #${{ github.event.pull_request.number }} at $target. The GlitchEngine regression suite and clap-validator both pass before publication. Raw MIDI CC pad input is handled directly through the CLAP note port. See TESTING.md and MIDI_SETUP.md."
+          }
+          else {
+            $tag = "v1-alpha-${{ github.run_number }}"
+            $target = "${{ github.sha }}"
+            $title = "GlitchDeck v1 alpha ${{ github.run_number }}"
+            $notes = "Validated native null-clap Windows build from $target. The GlitchEngine regression suite and clap-validator both pass before publication. Raw MIDI CC pad input is handled directly through the CLAP note port. See TESTING.md and MIDI_SETUP.md."
+          }
+          gh release create $tag dist/* --prerelease --target $target --title $title --notes $notes

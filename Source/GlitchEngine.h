@@ -1,8 +1,6 @@
 #pragma once
 
-#include <JuceHeader.h>
 #include <array>
-#include <atomic>
 #include <cstdint>
 #include <vector>
 
@@ -42,37 +40,56 @@ public:
         float shape = 0.5f;
     };
 
-    void prepare(double newSampleRate, int maximumBlockSize, int channels);
-    void reset();
+    struct StereoSample
+    {
+        float left = 0.0f;
+        float right = 0.0f;
+    };
 
-    void setSlotConfig(int slot, const SlotConfig& config);
-    void trigger(int slot, bool down);
+    void prepare(double newSampleRate, int channels = 2);
+    void reset() noexcept;
+
+    void setSlotConfig(int slot, const SlotConfig& config) noexcept;
+    void trigger(int slot, bool down) noexcept;
     bool isSlotActive(int slot) const noexcept;
 
-    void process(juce::AudioBuffer<float>& buffer, int startSample, int numSamples, float globalMix);
+    StereoSample processSample(float left, float right, float globalMix) noexcept;
 
 private:
+    struct LinearEnvelope
+    {
+        void reset(float value = 0.0f) noexcept;
+        void setTarget(float value, int samples) noexcept;
+        float next() noexcept;
+
+        float current = 0.0f;
+        float target = 0.0f;
+        float step = 0.0f;
+        int remaining = 0;
+    };
+
     struct SlotRuntime
     {
         SlotConfig config;
         bool active = false;
         std::int64_t activeSamples = 0;
-        juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> envelope;
+        LinearEnvelope envelope;
     };
 
     static bool isTransportEffect(EffectType type) noexcept;
     static bool isLoopDefiningEffect(EffectType type) noexcept;
+    static float lerp(float amount, float a, float b) noexcept;
 
     int wrapIndex(int index) const noexcept;
     double wrapPosition(double position) const noexcept;
     float readHistory(int channel, double position) const noexcept;
     int millisecondsToSamples(float milliseconds) const noexcept;
 
-    void captureLoopForSlot(int slot);
-    void startStreamingTransport();
-    void refreshTransportAfterRelease();
+    void captureLoopForSlot(int slot) noexcept;
+    void startStreamingTransport() noexcept;
+    void refreshTransportAfterRelease() noexcept;
 
-    std::array<SlotRuntime, numSlots> slots;
+    std::array<SlotRuntime, numSlots> slots {};
 
     std::vector<float> historyLeft;
     std::vector<float> historyRight;

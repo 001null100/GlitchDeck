@@ -4,6 +4,16 @@
 
 GlitchDeck is deterministic and performance-first. A trigger press must produce the configured gesture every time. There is no probability layer in V1.
 
+## Host architecture
+
+GlitchDeck is a native CLAP plugin built on `null-clap`.
+
+- null-clap owns CLAP lifecycle, audio/note ports, parameter/event routing, state, remote controls, and GUI extension plumbing.
+- GlitchDeck owns DSP, raw MIDI interpretation, MIDI Learn, trigger scheduling, and product behavior.
+- JUCE is used only for editor components and native window embedding. There is no JUCE AudioProcessor/APVTS/MIDI/playhead/plugin wrapper layer.
+
+The plugin advertises a raw MIDI note port using the CLAP MIDI dialect and interprets `CLAP_EVENT_MIDI` directly. Quantized scheduling reads the current native `clap_process_t` transport context.
+
 ## Signal model
 
 1. Input is continuously written into an 8-second stereo circular history buffer.
@@ -14,12 +24,12 @@ GlitchDeck is deterministic and performance-first. A trigger press must produce 
 
 ## Trigger slots
 
-Eight slots default to MIDI notes 36-43, displayed as C1-G1 using Bitwig-style octave naming. Every slot exposes:
+Eight slots default to CC20-27 on MIDI channel 16. Every slot exposes:
 
-- momentary trigger parameter
+- momentary writable trigger parameter
 - effect type
 - hold/latch behavior
-- MIDI note
+- MIDI binding type, number, and channel
 - onset quantization
 - stereo behavior
 - intensity
@@ -30,19 +40,21 @@ Eight slots default to MIDI notes 36-43, displayed as C1-G1 using Bitwig-style o
 
 The initial effect set is Stutter, Microloop, Reverse, Tape Stop, Pitch Dive, Pitch Rise, Bitcrush, and Dropout.
 
+Writable CLAP parameters participate in project state so hosts can reproduce their values exactly. Trigger parameter values therefore serialize like other writable parameters. The actual performance gesture state is separate and non-persistent: state load resets pending edges, envelopes, active slots, and the glitch engine before updating the restored configuration. A saved trigger value of `1` remains host-visible after load but does not itself re-engage the DSP gesture.
+
 ## Temporal grammar
 
-Stutter and Microloop capture and define a loop region. Reverse changes the direction of the same shared playback head. Pitch Dive and Pitch Rise continuously alter its playback rate. Tape Stop applies a deceleration curve to the same transport. When Tape Stop is used alone it follows a streaming read head instead of forcing an audible loop.
+Stutter and Microloop capture and define a loop region. Reverse changes the direction of the same shared playback head. Pitch Dive and Pitch Rise continuously alter its playback rate. Tape Stop applies a deceleration curve to the same transport. Reverse, Pitch Dive/Rise, and Tape Stop use a streaming recent-history head when performed alone instead of implicitly creating a loop. If a loop-defining gesture is released while one of those modifiers remains active, transport returns to streaming mode rather than staying trapped in the old loop region.
 
 This is intentionally different from serially instantiating independent delay-style effects. A held Stutter plus Pitch Dive should sound like a single repeated fragment progressively descending, not like a pitch effect receiving an unrelated stutter processor.
 
 ## Timing
 
-MIDI note offsets inside each audio block are preserved. Quantized onset scheduling uses host BPM and PPQ position and supports Free, 1/32, 1/16, 1/8, 1/4, and 1 Bar. Release remains immediate in V1 so a performer never feels trapped by a quantized release.
+Raw MIDI and host parameter events retain their CLAP sample offsets. Quantized onset scheduling uses CLAP transport tempo/beat information and supports Free, 1/32, 1/16, 1/8, 1/4, and 1 Bar. `1 Bar` follows the host's reported time signature and current bar start, with a 4/4 fallback if the host does not provide meter information. Release remains immediate in V1 so a performer never feels trapped by a quantized release.
 
 ## Real-time constraints
 
-The audio path performs no file IO and takes no mutexes. History storage is allocated in prepareToPlay. Trigger scheduling uses a fixed-size pending-event array. DSP state is mutated only by the audio thread; the editor receives a small atomic active-state mirror for drawing.
+The audio path performs no file IO and takes no mutexes. History storage is allocated at activation. Trigger scheduling uses fixed-size real-time-safe storage. DSP state is mutated on the audio thread; the editor reads atomic mirrors and sends host-visible parameter gestures through null-clap.
 
 ## Planned next layers
 
@@ -54,6 +66,5 @@ After the core performance feel is validated:
 - spectral freeze
 - synced loop-length modes
 - deeper stereo modes
-- MIDI learn UX
 - trigger modifiers such as Double and Brake
 - optional high-quality time stretch

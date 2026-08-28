@@ -5,12 +5,15 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+include(FetchContent)
+
 set(GLITCHDECK_JUCE_PATH "" CACHE PATH "Path to a JUCE checkout")
+set(GLITCHDECK_CLAP_JUCE_PATH "" CACHE PATH "Path to a clap-juce-extensions checkout")
+set(GLITCHDECK_CLAP_JUCE_COMMIT "c1a5ad025f95d01e03267857fa8276ebeed16500" CACHE STRING "Pinned clap-juce-extensions commit")
 
 if(GLITCHDECK_JUCE_PATH)
     add_subdirectory("${GLITCHDECK_JUCE_PATH}" JUCE)
 else()
-    include(FetchContent)
     FetchContent_Declare(
         JUCE
         GIT_REPOSITORY https://github.com/juce-framework/JUCE.git
@@ -18,6 +21,22 @@ else()
         GIT_SHALLOW TRUE
     )
     FetchContent_MakeAvailable(JUCE)
+endif()
+
+# Bitwig is CLAP-native and CLAP carries raw MIDI events, including CC, directly
+# to the plugin. That makes it the preferred GlitchDeck format for pad learn.
+set(CLAP_JUCE_EXTENSIONS_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+if(GLITCHDECK_CLAP_JUCE_PATH)
+    add_subdirectory("${GLITCHDECK_CLAP_JUCE_PATH}" clap-juce-extensions EXCLUDE_FROM_ALL)
+else()
+    FetchContent_Declare(
+        clap_juce_extensions
+        GIT_REPOSITORY https://github.com/free-audio/clap-juce-extensions.git
+        GIT_TAG ${GLITCHDECK_CLAP_JUCE_COMMIT}
+        GIT_SHALLOW FALSE
+        GIT_SUBMODULES_RECURSE TRUE
+    )
+    FetchContent_MakeAvailable(clap_juce_extensions)
 endif()
 
 juce_add_plugin(GlitchDeck
@@ -64,4 +83,10 @@ target_link_libraries(GlitchDeck PRIVATE
     juce::juce_recommended_config_flags
     juce::juce_recommended_lto_flags
     juce::juce_recommended_warning_flags
+)
+
+clap_juce_extensions_plugin(
+    TARGET GlitchDeck
+    CLAP_ID "dev.nullexo.glitchdeck"
+    CLAP_FEATURES "audio-effect"
 )

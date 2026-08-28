@@ -294,7 +294,7 @@ void GlitchDeckPlugin::processAudio(const clap_process_t& process,
     }
 
     updateEngineConfigs();
-    drainUiTriggers();
+    drainUiTriggers(startFrame);
 
     const auto mix = static_cast<float>(parameters().effectiveValue(glitchdeck::ids::mix));
     const auto* input = process.audio_inputs_count > 0 ? &process.audio_inputs[0] : nullptr;
@@ -621,7 +621,7 @@ bool GlitchDeckPlugin::popUiTrigger(UiTriggerEvent& event) noexcept
     return true;
 }
 
-void GlitchDeckPlugin::drainUiTriggers() noexcept
+void GlitchDeckPlugin::drainUiTriggers(std::uint32_t eventTime) noexcept
 {
     UiTriggerEvent event;
     while (popUiTrigger(event))
@@ -629,7 +629,7 @@ void GlitchDeckPlugin::drainUiTriggers() noexcept
         if (event.slot < 0 || event.slot >= numSlots)
             continue;
         lastAutomationDown_[static_cast<std::size_t>(event.slot)] = event.down;
-        scheduleTrigger(event.slot, event.down, 0);
+        scheduleTrigger(event.slot, event.down, eventTime);
     }
 }
 

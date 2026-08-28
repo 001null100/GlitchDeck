@@ -1,10 +1,22 @@
 # Build notes
 
-Every push to `main` builds both Windows formats:
+GlitchDeck now ships as a native Windows CLAP plugin.
 
-- `GlitchDeck.clap`, validated with `clap-validator`
-- `GlitchDeck.vst3`, validated with pluginval strictness level 3
+Every push builds `GlitchDeck.clap`, runs `clap-validator`, packages the validated plugin, and uploads it as a workflow artifact. Successful pushes to `main` also publish the package as a GitHub prerelease so test builds are available under **Releases**, not only inside Actions.
 
-Successful builds upload both formats as workflow artifacts and publish them together in a prerelease. CLAP is the preferred Bitwig format because GlitchDeck's pad workflow depends on direct MIDI CC events for internal MIDI Learn.
+## Host framework
 
-The CLAP wrapper is pinned to a known revision of `free-audio/clap-juce-extensions` with JUCE 9 compatibility fixes. V1 is intentionally being integrated in vertical slices: playable trigger path first, then CI/compiler cleanup, then performance testing in Bitwig, then additional glitch engines.
+GlitchDeck pins an exact revision of [`null-clap`](https://github.com/001null100/null-clap). null-clap owns:
+
+- CLAP lifecycle and entry/factory plumbing
+- audio and note ports
+- sample-accurate parameter/event routing
+- state serialization
+- remote-control pages
+- GUI host extension plumbing
+
+GlitchDeck owns the actual DSP, MIDI interpretation, trigger scheduling, MIDI Learn, and product-specific parameters. JUCE 9 is linked only for GUI components and native window embedding.
+
+## Validation
+
+CI uses the native `.clap` artifact as the validation target. A build is not published from `main` unless compilation and clap-validator both succeed.

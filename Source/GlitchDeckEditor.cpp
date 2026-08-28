@@ -78,10 +78,15 @@ void GlitchDeckEditor::TriggerPad::paint(juce::Graphics& g)
     }
 }
 
-void GlitchDeckEditor::TriggerPad::mouseDown(const juce::MouseEvent&)
+void GlitchDeckEditor::TriggerPad::mouseDown(const juce::MouseEvent& event)
 {
     if (onSelected)
         onSelected(slot_);
+
+    // Right-click is a safe selection gesture for editing during playback.
+    if (!event.mods.isLeftButtonDown())
+        return;
+
     mouseHeld_ = true;
     plugin_.setTriggerFromUi(slot_, true);
     repaint();
@@ -378,7 +383,11 @@ void GlitchDeckEditor::resized()
 
 void GlitchDeckEditor::selectSlot(int slot)
 {
-    selectedSlot_ = std::clamp(slot, 0, GlitchDeckPlugin::numSlots - 1);
+    const auto nextSlot = std::clamp(slot, 0, GlitchDeckPlugin::numSlots - 1);
+    if (nextSlot != selectedSlot_ && plugin_.isMidiLearning(selectedSlot_))
+        plugin_.toggleMidiLearn(selectedSlot_);
+
+    selectedSlot_ = nextSlot;
     for (int i = 0; i < GlitchDeckPlugin::numSlots; ++i)
         if (pads_[static_cast<std::size_t>(i)] != nullptr)
             pads_[static_cast<std::size_t>(i)]->setSelected(i == selectedSlot_);

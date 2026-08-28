@@ -1,6 +1,6 @@
 # GlitchDeck
 
-GlitchDeck is a playable, performance-first Windows glitch processor for Bitwig Studio. It ships as **CLAP (preferred for Bitwig)** and VST3.
+GlitchDeck is a playable, performance-first Windows glitch processor for Bitwig Studio. It is a **native CLAP plugin** built on [null-clap](https://github.com/001null100/null-clap), with JUCE used only for the graphical editor.
 
 The plugin continuously records recent input audio into a circular history buffer, then lets eight trigger slots temporarily reinterpret that history as repeat, reverse, pitch/rate, destruction, and dropout gestures. Multiple compatible triggers can be held together so glitches behave more like an instrument than a random effect generator.
 
@@ -9,7 +9,7 @@ The plugin continuously records recent input audio into a circular history buffe
 - Eight hold/latch trigger slots
 - Dedicated controller-pad scheme: CC20-27 on MIDI channel 16 by default
 - Per-slot MIDI Learn for Note or CC bindings
-- Sample-offset-aware MIDI triggering
+- Direct raw `CLAP_EVENT_MIDI` handling with sample offsets preserved
 - Continuous stereo history buffer
 - Stutter / microloop
 - Reverse modifier
@@ -17,36 +17,36 @@ The plugin continuously records recent input audio into a circular history buffe
 - Tape stop
 - Bitcrush burst
 - Dropout
-- Quantized trigger starts
+- Quantized trigger starts from CLAP transport
 - Smooth wet/dry attack and release
-- Bitwig-friendly parameters and automation
-- Windows GitHub Actions builds for CLAP + VST3
-- CLAP validation with clap-validator and VST3 validation with pluginval
+- Bitwig-friendly native CLAP parameters, state, and remote-control pages
+- Windows GitHub Actions build validated with clap-validator
 
 Probability is deliberately not part of the design. A performed trigger should reliably do what the performer asked.
 
-## Why CLAP is preferred in Bitwig
+## MIDI input
 
-GlitchDeck's performance pads are intended to send ordinary MIDI CC messages: 127 on press and 0 on release. CLAP exposes a real MIDI event input to the plugin, so Bitwig can send those CC packets directly into GlitchDeck and its internal MIDI Learn system can see them.
+GlitchDeck's performance pads are intended to send ordinary MIDI CC messages: 127 on press and 0 on release. The plugin advertises a native CLAP MIDI input port, so Bitwig can send those packets directly to GlitchDeck and its internal MIDI Learn system can see them.
 
-VST3 remains available as a compatibility build, but VST3 represents MIDI CC through host parameter mapping rather than ordinary plugin MIDI events. Depending on the host, that can prevent plugin-side CC Learn from seeing the controller at all.
+The recommended Nektar Impact LX25 MK3 layout is CC20-27 on channel 16, saved to a dedicated pad map. See [`docs/MIDI_SETUP.md`](docs/MIDI_SETUP.md).
 
 ## Build
 
 ```powershell
-cmake -S . -B build -G "Visual Studio 18 2026" -A x64
-cmake --build build --config Release --parallel
+cmake -S . -B build -G "Visual Studio 17 2022" -A x64
+cmake --build build --config Release --parallel --target GlitchDeck_CLAP
 ```
 
-CMake fetches JUCE 9.0.0 and the pinned `clap-juce-extensions` revision automatically unless `GLITCHDECK_JUCE_PATH` and/or `GLITCHDECK_CLAP_JUCE_PATH` point to existing checkouts.
+CMake fetches JUCE 9.0.0 and the exact pinned null-clap revision automatically. JUCE provides GUI/windowing only; the plugin lifecycle, audio/event routing, parameters, state, note ports, and host integration are native CLAP through null-clap.
 
 ## Install on Windows
 
-- CLAP: copy `GlitchDeck.clap` to `C:\Program Files\Common Files\CLAP\` (or a user CLAP path).
-- VST3: copy `GlitchDeck.vst3` to `C:\Program Files\Common Files\VST3\`.
+Copy `GlitchDeck.clap` to:
 
-For Bitwig controller testing, use the CLAP build first.
+`C:\Program Files\Common Files\CLAP\`
+
+Then rescan plugins in Bitwig if necessary.
 
 ## Status
 
-Early V1 alpha. The architecture and DSP are being built around deterministic, combinable performance gestures first; polish and additional effects follow once the core feels good under the fingers.
+Early V1 alpha. The current build is focused on validating the native CLAP trigger path and the shared glitch-transport DSP under real performance input before expanding the effect set.

@@ -81,10 +81,11 @@ target_link_libraries(GlitchDeck PRIVATE
     juce::juce_dsp
     PUBLIC
     juce::juce_recommended_config_flags
-    juce::juce_recommended_lto_flags
     juce::juce_recommended_warning_flags
 )
 
+# LTO is intentionally omitted from alpha builds. It made the two-wrapper
+# Windows CI link step several minutes slower without helping functional tests.
 clap_juce_extensions_plugin(
     TARGET GlitchDeck
     CLAP_ID "dev.nullexo.glitchdeck"

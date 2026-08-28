@@ -10,6 +10,11 @@ namespace
 constexpr std::array<float, GlitchDeckAudioProcessor::numSlots> defaultLengths {
     125.0f, 12.0f, 250.0f, 600.0f, 450.0f, 350.0f, 180.0f, 120.0f
 };
+
+const juce::Identifier stateRootType { "GlitchDeckStateV2" };
+const juce::Identifier stateParameterType { "PARAM" };
+const juce::Identifier stateIdProperty { "id" };
+const juce::Identifier stateValueProperty { "value" };
 }
 
 GlitchDeckAudioProcessor::GlitchDeckAudioProcessor()
@@ -93,7 +98,24 @@ juce::AudioProcessorEditor* GlitchDeckAudioProcessor::createEditor()
 
 void GlitchDeckAudioProcessor::getStateInformation(juce::MemoryBlock& destData)
 {
-    if (auto xml = parameters.copyState().createXml())
+    // Snapshot the actual processor parameters, rather than APVTS's asynchronously
+    // mirrored ValueTree. CLAP parameter events arrive through the wrapper and can
+    // be saved immediately, before APVTS's timer has had a chance to mirror them.
+    juce::ValueTree state(stateRootType);
+
+    for (auto* parameter : getParameters())
+    {
+        auto* ranged = dynamic_cast<juce::RangedAudioParameter*>(parameter);
+        if (ranged == nullptr)
+            continue;
+
+        juce::ValueTree item(stateParameterType);
+        item.setProperty(stateIdProperty, ranged->paramID, nullptr);
+        item.setProperty(stateValueProperty, static_cast<double>(parameter->getValue()), nullptr);
+        state.appendChild(item, nullptr);
+    }
+
+    if (auto xml = state.createXml())
         copyXmlToBinary(*xml, destData);
 }
 
@@ -101,8 +123,33 @@ void GlitchDeckAudioProcessor::setStateInformation(const void* data, int sizeInB
 {
     if (auto xml = getXmlFromBinary(data, sizeInBytes))
     {
-        if (xml->hasTagName(parameters.state.getType()))
-            parameters.replaceState(juce::ValueTree::fromXml(*xml));
+        const auto restored = juce::ValueTree::fromXml(*xml);
+
+        if (restored.hasType(stateRootType))
+        {
+            for (const auto& item : restored)
+            {
+                if (! item.hasType(stateParameterType))
+                    continue;
+
+                const auto id = item.getProperty(stateIdProperty).toString();
+                if (auto* parameter = parameters.getParameter(id))
+                {
+                    const auto normalised = juce::jlimit(
+                        0.0f, 1.0f, static_cast<float>(static_cast<double>(item.getProperty(stateValueProperty))));
+
+                    // State load happens on the main thread. Notify parameter listeners
+                    // synchronously so APVTS, the editor, and the CLAP wrapper all see
+                    // the restored value immediately.
+                    parameter->setValueNotifyingHost(normalised);
+                }
+            }
+        }
+        else if (xml->hasTagName(parameters.state.getType()))
+        {
+            // Backward compatibility with alpha-8 and earlier VST3 projects.
+            parameters.replaceState(restored);
+        }
     }
 
     pendingTriggers = {};

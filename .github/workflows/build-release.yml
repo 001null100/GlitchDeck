@@ -68,10 +68,23 @@ jobs:
           retention-days: 14
 
       - name: Publish v1 alpha release
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: >-
+          (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+          (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $tag = "v1-alpha-${{ github.run_number }}"
-          gh release create $tag dist/* --prerelease --target "${{ github.sha }}" --title "GlitchDeck v1 alpha ${{ github.run_number }}" --notes "Native null-clap Windows build from ${{ github.sha }}. The CLAP module passes clap-validator before publication. Raw MIDI CC pad input is handled directly through the CLAP note port. See TESTING.md and MIDI_SETUP.md."
+          if ("${{ github.event_name }}" -eq "pull_request") {
+            $tag = "v1-alpha-pr${{ github.event.pull_request.number }}-${{ github.run_number }}"
+            $target = "${{ github.event.pull_request.head.sha }}"
+            $title = "GlitchDeck v1 alpha PR #${{ github.event.pull_request.number }} build ${{ github.run_number }}"
+            $notes = "Validated native null-clap Windows build from PR #${{ github.event.pull_request.number }} at $target. The CLAP module passes clap-validator before publication. Raw MIDI CC pad input is handled directly through the CLAP note port. See TESTING.md and MIDI_SETUP.md."
+          }
+          else {
+            $tag = "v1-alpha-${{ github.run_number }}"
+            $target = "${{ github.sha }}"
+            $title = "GlitchDeck v1 alpha ${{ github.run_number }}"
+            $notes = "Validated native null-clap Windows build from $target. The CLAP module passes clap-validator before publication. Raw MIDI CC pad input is handled directly through the CLAP note port. See TESTING.md and MIDI_SETUP.md."
+          }
+          gh release create $tag dist/* --prerelease --target $target --title $title --notes $notes

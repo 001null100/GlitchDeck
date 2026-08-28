@@ -2,7 +2,7 @@
 
 GlitchDeck now ships as a native Windows CLAP plugin.
 
-Every push builds `GlitchDeck.clap`, runs `clap-validator`, packages the validated plugin, and uploads it as a workflow artifact. Successful pushes to `main` also publish the package as a GitHub prerelease so test builds are available under **Releases**, not only inside Actions.
+Every pull request build and every push to `main` builds `GlitchDeck.clap`, runs `clap-validator`, packages the validated plugin, and uploads it as a workflow artifact. Successful same-repository pull request builds are also published as GitHub prereleases so they can be tested in Bitwig before merging. Successful pushes to `main` publish their own alpha prerelease as the mainline build.
 
 ## Host framework
 
@@ -19,4 +19,4 @@ GlitchDeck owns the actual DSP, MIDI interpretation, trigger scheduling, MIDI Le
 
 ## Validation
 
-CI uses the native `.clap` artifact as the validation target. A build is not published from `main` unless compilation and clap-validator both succeed.
+CI uses the native `.clap` artifact as the validation target. No GitHub prerelease is published unless compilation and clap-validator both succeed.

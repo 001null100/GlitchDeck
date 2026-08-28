@@ -26,7 +26,7 @@ The plugin advertises a raw MIDI note port using the CLAP MIDI dialect and inter
 
 Eight slots default to CC20-27 on MIDI channel 16. Every slot exposes:
 
-- non-persistent momentary trigger parameter
+- momentary writable trigger parameter
 - effect type
 - hold/latch behavior
 - MIDI binding type, number, and channel
@@ -40,7 +40,7 @@ Eight slots default to CC20-27 on MIDI channel 16. Every slot exposes:
 
 The initial effect set is Stutter, Microloop, Reverse, Tape Stop, Pitch Dive, Pitch Rise, Bitcrush, and Dropout.
 
-Trigger parameters are intentionally excluded from persistent project state. Saving while a performance pad is held must not reopen a project with that gesture logically stuck on.
+Writable CLAP parameters participate in project state so hosts can reproduce their values exactly. Trigger parameter values therefore serialize like other writable parameters. The actual performance gesture state is separate and non-persistent: state load resets pending edges, envelopes, active slots, and the glitch engine before updating the restored configuration. A saved trigger value of `1` remains host-visible after load but does not itself re-engage the DSP gesture.
 
 ## Temporal grammar
 

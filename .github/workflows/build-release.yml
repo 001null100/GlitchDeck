@@ -34,6 +34,10 @@ jobs:
         shell: pwsh
         run: cmake --build build --config Release --parallel
 
+      - name: Test GlitchEngine
+        shell: pwsh
+        run: ctest --test-dir build -C Release --output-on-failure
+
       - name: Validate CLAP
         shell: pwsh
         run: |
@@ -79,12 +83,12 @@ jobs:
             $tag = "v1-alpha-pr${{ github.event.pull_request.number }}-${{ github.run_number }}"
             $target = "${{ github.event.pull_request.head.sha }}"
             $title = "GlitchDeck v1 alpha PR #${{ github.event.pull_request.number }} build ${{ github.run_number }}"
-            $notes = "Validated native null-clap Windows build from PR #${{ github.event.pull_request.number }} at $target. The CLAP module passes clap-validator before publication. Raw MIDI CC pad input is handled directly through the CLAP note port. See TESTING.md and MIDI_SETUP.md."
+            $notes = "Validated native null-clap Windows build from PR #${{ github.event.pull_request.number }} at $target. The GlitchEngine regression suite and clap-validator both pass before publication. Raw MIDI CC pad input is handled directly through the CLAP note port. See TESTING.md and MIDI_SETUP.md."
           }
           else {
             $tag = "v1-alpha-${{ github.run_number }}"
             $target = "${{ github.sha }}"
             $title = "GlitchDeck v1 alpha ${{ github.run_number }}"
-            $notes = "Validated native null-clap Windows build from $target. The CLAP module passes clap-validator before publication. Raw MIDI CC pad input is handled directly through the CLAP note port. See TESTING.md and MIDI_SETUP.md."
+            $notes = "Validated native null-clap Windows build from $target. The GlitchEngine regression suite and clap-validator both pass before publication. Raw MIDI CC pad input is handled directly through the CLAP note port. See TESTING.md and MIDI_SETUP.md."
           }
           gh release create $tag dist/* --prerelease --target $target --title $title --notes $notes

@@ -2,6 +2,16 @@
 
 GlitchDeck is designed to let a controller keybed keep behaving like a musical keyboard while dedicated pads control glitch triggers.
 
+## Use the CLAP build in Bitwig
+
+For direct pad input and GlitchDeck's internal MIDI Learn, use `GlitchDeck.clap`. CLAP exposes raw MIDI events to the plugin, including Control Change messages. The VST3 build is retained for compatibility, but VST3 normally represents MIDI CC through host parameter mapping, so plugin-side CC Learn may never see those messages in some hosts.
+
+On Windows, the standard system CLAP directory is:
+
+`C:\Program Files\Common Files\CLAP\`
+
+After copying `GlitchDeck.clap` there, rescan plug-ins in Bitwig and load the **CLAP** entry.
+
 ## Recommended scheme: pads send CC, keys send notes
 
 Do **not** assign the GlitchDeck pads to C1-G1 notes if those pitches are also reachable from the keybed. A MIDI Note 36 from a pad is indistinguishable from MIDI Note 36 from a key.
@@ -30,13 +40,13 @@ The LX mk3 can program each pad independently.
 5. Select **d1** and set each pad's trigger/press value to **127**.
 6. Select **d2** and set each pad's release value to **0**.
 7. Select **Ch** and set all eight pads to **16**. The keybed can remain on the normal global channel, usually channel 1.
-8. Select **Sav**, choose an unused Pad Map (for example PM8) with the pad-map arrows, and press **Select** to save it.
+8. Use **Sav** if you want to store the controller configuration in a pad map/preset slot.
 
 Now the pads no longer generate musical notes, so playing the same pitches on the keybed cannot accidentally trigger GlitchDeck and striking a pad cannot play the instrument.
 
 ## GlitchDeck MIDI Learn
 
-For any trigger slot:
+For any trigger slot in the **CLAP** build:
 
 1. Select the trigger.
 2. Click **LEARN**.
@@ -45,7 +55,7 @@ For any trigger slot:
 
 Learn accepts Note On messages or CC values >= 64. For a learned CC binding, values >= 64 are treated as pad-down and values < 64 as pad-up. The Nektar's `Trg` assignment therefore maps naturally to hold/release behavior.
 
-If **LEARN** remains waiting after you hit a pad, GlitchDeck did not receive the MIDI event. Check the Bitwig track input/controller routing before debugging the effect itself.
+If **LEARN** remains waiting on the CLAP build after you hit a pad, GlitchDeck did not receive the event. That is a plugin/host routing bug worth reporting. If the same happens only in VST3, use CLAP instead or map the exposed Trigger parameters through Bitwig.
 
 ## Why channel 16?
 

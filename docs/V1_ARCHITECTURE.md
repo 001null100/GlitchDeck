@@ -44,13 +44,13 @@ Writable CLAP parameters participate in project state so hosts can reproduce the
 
 ## Temporal grammar
 
-Stutter and Microloop capture and define a loop region. Reverse changes the direction of the same shared playback head. Pitch Dive and Pitch Rise continuously alter its playback rate. Tape Stop applies a deceleration curve to the same transport. When Tape Stop is used alone it follows a streaming read head instead of forcing an audible loop.
+Stutter and Microloop capture and define a loop region. Reverse changes the direction of the same shared playback head. Pitch Dive and Pitch Rise continuously alter its playback rate. Tape Stop applies a deceleration curve to the same transport. Reverse, Pitch Dive/Rise, and Tape Stop use a streaming recent-history head when performed alone instead of implicitly creating a loop. If a loop-defining gesture is released while one of those modifiers remains active, transport returns to streaming mode rather than staying trapped in the old loop region.
 
 This is intentionally different from serially instantiating independent delay-style effects. A held Stutter plus Pitch Dive should sound like a single repeated fragment progressively descending, not like a pitch effect receiving an unrelated stutter processor.
 
 ## Timing
 
-Raw MIDI and host parameter events retain their CLAP sample offsets. Quantized onset scheduling uses CLAP transport tempo/beat information and supports Free, 1/32, 1/16, 1/8, 1/4, and 1 Bar. Release remains immediate in V1 so a performer never feels trapped by a quantized release.
+Raw MIDI and host parameter events retain their CLAP sample offsets. Quantized onset scheduling uses CLAP transport tempo/beat information and supports Free, 1/32, 1/16, 1/8, 1/4, and 1 Bar. `1 Bar` follows the host's reported time signature and current bar start, with a 4/4 fallback if the host does not provide meter information. Release remains immediate in V1 so a performer never feels trapped by a quantized release.
 
 ## Real-time constraints
 

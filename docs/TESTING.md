@@ -32,7 +32,16 @@ Then test Learn explicitly:
 
 If Learn stays waiting, report that specifically. It means the raw CLAP MIDI event path is not reaching GlitchDeck and is the highest-priority bug.
 
-## 3. Combinations
+## 3. Standalone transport gestures
+
+Test Reverse, Tape Stop, Pitch Dive, and Pitch Rise individually before combining them.
+
+- Reverse alone should move backward through recent audio instead of falling into a short repeating loop.
+- Pitch Dive/Rise alone should behave as streaming rate gestures instead of implicitly becoming loop effects.
+- Tape Stop alone should decelerate the streaming history head.
+- Releasing a Stutter/Microloop while Reverse, Pitch, or Tape Stop remains held should leave the remaining gesture running without getting trapped in the old loop region.
+
+## 4. Combinations
 
 Try these deliberately:
 
@@ -44,19 +53,19 @@ Try these deliberately:
 
 The combinations should sound like modifications of one gesture, especially Stutter + Reverse/Pitch/Tape, rather than unrelated effects being restarted.
 
-## 4. Latch
+## 5. Latch
 
 Enable Latch on a slot. A short press should toggle the effect on; the next press should toggle it off. The CC release value should not cancel a latched gesture.
 
-## 5. Quantization
+## 6. Quantization
 
 With Bitwig playing, test Free, 1/16, 1/8, and 1/4. Onsets should wait for the selected host grid boundary. Release is intentionally immediate in this alpha.
 
-## 6. MIDI remap
+## 7. MIDI remap
 
 Use Learn to bind one slot to a different CC or Note message. Verify the old binding stops addressing it and the new binding starts addressing it. Also verify channel filtering works with a different MIDI channel.
 
-## 7. UI / keyboard / automation
+## 8. UI / keyboard / automation
 
 - Pads should visibly light while active.
 - Clicking and holding a pad should behave like holding MIDI.
@@ -64,7 +73,7 @@ Use Learn to bind one slot to a different CC or Note message. Verify the old bin
 - Changing the selected slot should retarget the lower editor without changing audio state.
 - Host automation of Trigger 1-8 should create the same performance edges as UI/MIDI triggering.
 
-## 8. Things worth reporting precisely
+## 9. Things worth reporting precisely
 
 For timing or audio bugs, note:
 

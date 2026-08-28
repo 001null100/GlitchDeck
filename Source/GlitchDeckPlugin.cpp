@@ -138,7 +138,6 @@ void GlitchDeckPlugin::registerParameters()
         const auto module = slotModule(slot);
 
         auto trigger = nullclap::ParameterSpec::continuous(id.trigger, "Trigger", module, 0.0, 1.0, 0.0, triggerFlags);
-        trigger.persistent = false;
         trigger.displayPrecision = 0;
         parameters().add(std::move(trigger));
 
@@ -565,14 +564,36 @@ std::int64_t GlitchDeckPlugin::quantizedTargetSample(int slot, std::uint32_t eve
         || source->tempo <= 0.0)
         return streamSampleCounter_;
 
-    constexpr std::array<double, 6> grids { 0.0, 0.125, 0.25, 0.5, 1.0, 4.0 };
-    const auto grid = grids[static_cast<std::size_t>(quantizeIndex)];
     const auto elapsedSamples = static_cast<double>(std::max<std::int64_t>(0, streamSampleCounter_ - anchorSample));
     const auto beatAtAnchor = static_cast<double>(source->song_pos_beats) / static_cast<double>(CLAP_BEATTIME_FACTOR);
     const auto beatDelta = (source->tempo * elapsedSamples
         + 0.5 * source->tempo_inc * elapsedSamples * elapsedSamples) / (60.0 * sampleRate_);
     const auto eventBeat = beatAtAnchor + beatDelta;
-    const auto targetBeat = std::ceil((eventBeat - 1.0e-9) / grid) * grid;
+
+    double targetBeat = eventBeat;
+    if (quantizeIndex == 5)
+    {
+        double barLengthBeats = 4.0;
+        double barStartBeat = 0.0;
+        if ((source->flags & CLAP_TRANSPORT_HAS_TIME_SIGNATURE) != 0
+            && source->tsig_num > 0
+            && source->tsig_denom > 0)
+        {
+            barLengthBeats = static_cast<double>(source->tsig_num) * 4.0
+                / static_cast<double>(source->tsig_denom);
+            barStartBeat = static_cast<double>(source->bar_start) / static_cast<double>(CLAP_BEATTIME_FACTOR);
+        }
+        barLengthBeats = std::max(1.0e-6, barLengthBeats);
+        targetBeat = barStartBeat
+            + std::ceil((eventBeat - barStartBeat - 1.0e-9) / barLengthBeats) * barLengthBeats;
+    }
+    else
+    {
+        constexpr std::array<double, 5> grids { 0.0, 0.125, 0.25, 0.5, 1.0 };
+        const auto grid = grids[static_cast<std::size_t>(quantizeIndex)];
+        targetBeat = std::ceil((eventBeat - 1.0e-9) / grid) * grid;
+    }
+
     const auto tempoNow = std::max(1.0e-6, source->tempo + source->tempo_inc * elapsedSamples);
     const auto deltaSamples = static_cast<std::int64_t>(
         std::llround((targetBeat - eventBeat) * 60.0 * sampleRate_ / tempoNow));

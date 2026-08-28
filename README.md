@@ -34,7 +34,7 @@ The recommended Nektar Impact LX25 MK3 layout is CC20-27 on channel 16, saved to
 
 ```powershell
 cmake -S . -B build -G "Visual Studio 17 2022" -A x64
-cmake --build build --config Release --parallel --target GlitchDeck_CLAP
+cmake --build build --config Release --parallel --target GlitchDeck
 ```
 
 CMake fetches JUCE 9.0.0 and the exact pinned null-clap revision automatically. JUCE provides GUI/windowing only; the plugin lifecycle, audio/event routing, parameters, state, note ports, and host integration are native CLAP through null-clap.

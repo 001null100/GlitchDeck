@@ -49,6 +49,7 @@ const clap_plugin_descriptor_t& GlitchDeckPlugin::descriptor() noexcept
 {
     static const char* const features[] {
         CLAP_PLUGIN_FEATURE_AUDIO_EFFECT,
+        CLAP_PLUGIN_FEATURE_INSTRUMENT,
         CLAP_PLUGIN_FEATURE_STEREO,
         nullptr,
     };

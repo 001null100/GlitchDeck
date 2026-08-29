@@ -59,23 +59,46 @@ The label above Learn continuously shows the last MIDI/note event that **Bitwig 
 - `MIDI IN · CC23 CH16 127` means Bitwig delivered CC23, channel 16, value 127 to the plugin.
 - note input appears as a compact note/channel ON or OFF message.
 
-This is deliberately different from an external MIDI tester. A tester proves that the controller emitted bytes. It does **not** prove that Bitwig's controller integration inserted those bytes into the track/device-chain note signal that reaches a CLAP plug-in.
+This is deliberately different from an external MIDI tester. A tester proves that the controller emitted bytes. It does **not** prove that Bitwig's controller integration inserted those bytes into the track/device-chain MIDI signal that reaches a CLAP plug-in.
 
-Learn accepts Note On messages or CC values >= 64. For a learned CC binding, values >= 64 are treated as pad-down and values < 64 as pad-up. The Nektar's `Trg` assignment therefore maps naturally to hold/release behavior.
+Learn accepts Note On messages or CC values >= 64. For a learned CC binding, values >= 64 are treated as pad-down and values < 64 as pad-up. The Nektar's `Trg` assignment therefore maps naturally to hold/release behavior when the messages reach the plug-in.
 
-## If the Nektar CCs still do not appear
+## `NO HOST MIDI`: isolate the Bitwig boundary
 
-Use the MIDI IN diagnostic to separate two failure classes:
+Bitwig's device chain is capable of carrying MIDI CC streams to plug-ins, but a dedicated controller extension can process hardware MIDI before it becomes track/device-chain input. The Nektar mk3 Bitwig integration is built heavily around Bitwig Remote Controls, so the following tests separate those paths.
 
-1. Arm Learn and hit a Nektar pad.
-2. If the label changes to the expected `CCxx CH16 127` but Learn does not complete or the slot does not trigger, that is a GlitchDeck bug.
-3. If the label remains `NO HOST MIDI` while a standalone MIDI tester sees the Nektar CC, the event is being filtered or consumed before it reaches GlitchDeck.
+### A. Bitwig-generated CC control test
 
-For a control test, generate a CC inside Bitwig immediately upstream of GlitchDeck using a Bitwig MIDI/CC device or another source known to feed the device-chain note signal. Send, for example, CC20 on channel 16 with value 127 then 0. If **that** appears in `MIDI IN` and triggers/learns correctly while the physical Nektar CC does not, the native CLAP path is working and the controller integration is the filter.
+1. Insert Bitwig's **MIDI CC** device immediately before GlitchDeck in the same device chain.
+2. Set its MIDI channel to **16**.
+3. Assign one knob to **CC20**.
+4. Move that knob between 0 and 127 while watching GlitchDeck's `MIDI IN` line.
 
-The Nektar/Bitwig integration also uses Bitwig Remote Controls heavily. GlitchDeck exposes a **Triggers** remote-control page containing Trigger 1-8, so Bitwig's own hardware/remote mapping is the immediate fallback even when controller CC bytes are not forwarded into the track stream.
+Expected result: `MIDI IN` should show CC20/channel 16 activity. If it does, GlitchDeck's CLAP raw-MIDI port and parser are working inside Bitwig and the physical-controller route is the remaining problem.
 
-A second fallback is to program the pads as otherwise-unused notes on channel 16. GlitchDeck accepts both raw MIDI notes and native CLAP Note On/Off events, so this can work when a controller script forwards notes but filters arbitrary CCs. Use note numbers outside the range you normally play if you want to avoid keybed collisions.
+### B. Bypass the Nektar-specific controller extension
+
+This is a diagnostic, not a permanent recommendation.
+
+1. Open **Dashboard → Settings → Controllers**.
+2. Temporarily disable or remove the Nektar-specific Impact LX mk3 controller entry so it no longer owns the Impact input port.
+3. Add **Generic → MIDI Keyboard** and select the Impact's MIDI input port.
+4. On the track containing GlitchDeck, choose that Generic controller as the note/MIDI input, or leave the track on **All inputs**.
+5. Hit the programmed CC pad and watch `MIDI IN`.
+
+If the same hardware pad now appears as `CC20…CC27 CH16`, the Nektar-specific Bitwig extension is consuming or diverting the pad CC before it reaches the track stream. Re-enable the normal Nektar integration afterward.
+
+### C. Host mapping fallback
+
+If you want the Nektar integration active and Bitwig continues to consume the pad CCs, GlitchDeck exposes Trigger 1-8 as host parameters and on a dedicated **Triggers** Remote Controls page.
+
+Open Bitwig's **Mappings Browser** and set **Map source priority** so raw mappings get first chance at the incoming controller message. Then map each physical pad directly to the corresponding GlitchDeck Trigger parameter. This bypasses plugin-side MIDI Learn entirely: Bitwig converts the hardware CC into a CLAP parameter event, which GlitchDeck already treats as the same trigger edge as its UI and automation.
+
+This is a functional fallback, not a replacement for the raw-MIDI path. Plugin-side **LEARN** cannot discover a CC number/channel when Bitwig never forwards that MIDI event to the plugin.
+
+## Native note fallback
+
+A second diagnostic is to program one pad as an otherwise-unused MIDI note on channel 16. GlitchDeck accepts both raw MIDI notes and native CLAP Note On/Off events. If notes appear in `MIDI IN` while programmed CCs do not, Bitwig is forwarding note data from the controller but filtering/diverting arbitrary CC messages.
 
 ## Why channel 16?
 

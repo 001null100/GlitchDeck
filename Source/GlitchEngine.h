@@ -78,6 +78,7 @@ private:
 
     static bool isTransportEffect(EffectType type) noexcept;
     static bool isLoopDefiningEffect(EffectType type) noexcept;
+    static bool requiresCapturedTransport(EffectType type) noexcept;
     static float lerp(float amount, float a, float b) noexcept;
 
     int wrapIndex(int index) const noexcept;
@@ -86,7 +87,7 @@ private:
     float readCapturedHistory(int channel, double position) const noexcept;
     int millisecondsToSamples(float milliseconds) const noexcept;
 
-    void captureLoopForSlot(int slot) noexcept;
+    void captureLoopForSlot(int slot, bool looping) noexcept;
     void startStreamingTransport() noexcept;
     void refreshTransportAfterRelease() noexcept;
 
@@ -95,6 +96,7 @@ private:
     std::vector<float> historyLeft;
     std::vector<float> historyRight;
     int historySize = 0;
+    int historySamplesAvailable = 0;
     int writePosition = 0;
 
     double sampleRate = 44100.0;
@@ -102,6 +104,7 @@ private:
 
     bool transportEngaged = false;
     bool streamingTransport = false;
+    bool capturedTransportLoops = true;
     double readPosition = 0.0;
     int loopStart = 0;
     int loopLength = 1;

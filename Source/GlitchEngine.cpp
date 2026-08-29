@@ -250,12 +250,28 @@ void GlitchEngine::captureLoopForSlot(int slotIndex, bool looping) noexcept
 
     if (!looping && config.effect == EffectType::pitchRise)
     {
-        // Reserve enough history for the worst-case speed over the whole gesture.
-        // This deliberately overestimates travel so the one-shot head reaches an
-        // endpoint instead of wrapping before the rise is finished.
-        const auto maxSemitones = 24.0 * static_cast<double>(std::clamp(config.intensity, 0.0f, 1.0f));
+        // Estimate the source distance consumed by the actual rising rate curve
+        // instead of reserving duration * maximumRate. The latter is safe but
+        // starts the gesture needlessly far in the past. A fixed-size midpoint
+        // integration is deterministic, allocation-free, and only runs on a
+        // trigger edge.
+        constexpr int integrationSteps = 32;
+        const auto intensity = static_cast<double>(std::clamp(config.intensity, 0.0f, 1.0f));
+        const auto exponent = 0.35 + static_cast<double>(config.shape) * 2.65;
+        const auto maxSemitones = 24.0 * intensity;
         const auto maxRate = std::pow(2.0, maxSemitones / 12.0);
-        desiredLength = static_cast<int>(std::ceil(static_cast<double>(durationSamples) * maxRate)) + 8;
+        double rateSum = 0.0;
+        for (int step = 0; step < integrationSteps; ++step)
+        {
+            const auto progress = (static_cast<double>(step) + 0.5) / static_cast<double>(integrationSteps);
+            const auto shaped = std::pow(progress, exponent);
+            rateSum += std::pow(2.0, maxSemitones * shaped / 12.0);
+        }
+        const auto averageRate = rateSum / static_cast<double>(integrationSteps);
+        const auto safetySamples = static_cast<int>(std::ceil(
+            maxRate * static_cast<double>(millisecondsToSamples(2.0f))));
+        desiredLength = static_cast<int>(std::ceil(static_cast<double>(durationSamples) * averageRate))
+            + safetySamples + 8;
     }
     else if (!looping && config.effect == EffectType::pitchDive)
     {

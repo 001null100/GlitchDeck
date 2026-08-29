@@ -84,6 +84,7 @@ private:
     int wrapIndex(int index) const noexcept;
     double wrapPosition(double position) const noexcept;
     float readHistory(int channel, double position) const noexcept;
+    float readCapturedHistory(int channel, double position) const noexcept;
     int millisecondsToSamples(float milliseconds) const noexcept;
 
     void captureLoopForSlot(int slot) noexcept;

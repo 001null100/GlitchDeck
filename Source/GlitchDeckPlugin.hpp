@@ -42,6 +42,7 @@ public:
     int effectIndex(int slot) const noexcept;
     std::string effectName(int slot) const;
     std::string midiBindingText(int slot) const;
+    std::string midiActivityText() const;
 
     static const std::array<const char*, 8>& effectNames() noexcept;
     static const std::array<const char*, 6>& quantizeNames() noexcept;
@@ -79,8 +80,11 @@ private:
     void updateEngineConfigs() noexcept;
 
     void drainUiTriggers(std::uint32_t eventTime) noexcept;
+    bool captureMidiLearn(MidiBindingType type, int number, int channel) noexcept;
     bool tryCaptureMidiLearn(std::uint8_t status, std::uint8_t data1, std::uint8_t data2) noexcept;
+    void recordMidiActivity(MidiBindingType type, int number, int channel, int value, bool down) noexcept;
     void handleMidiEvent(const clap_event_midi_t& event) noexcept;
+    void handleNoteEvent(const clap_event_note_t& event, bool down) noexcept;
     void handleParameterEvent(const clap_event_param_value_t& event) noexcept;
     void handleTransportEvent(const clap_event_transport_t& event) noexcept;
 
@@ -110,6 +114,7 @@ private:
     std::atomic<int> learnedType_ { 0 };
     std::atomic<int> learnedNumber_ { 0 };
     std::atomic<int> learnedChannel_ { 0 };
+    std::atomic<std::uint32_t> midiActivity_ { 0 };
 
     clap_event_transport_t transport_ {};
     bool hasTransport_ = false;

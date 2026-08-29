@@ -23,6 +23,13 @@ constexpr std::array<double, GlitchDeckPlugin::numSlots> defaultLengths {
 constexpr std::uint32_t steppedAutomatable = CLAP_PARAM_IS_AUTOMATABLE | CLAP_PARAM_IS_STEPPED;
 constexpr std::uint32_t triggerFlags = steppedAutomatable | CLAP_PARAM_REQUIRES_PROCESS;
 
+constexpr std::uint32_t activityValid = 1u << 31;
+constexpr std::uint32_t activityCc = 1u << 30;
+constexpr std::uint32_t activityDown = 1u << 29;
+constexpr std::uint32_t activityChannelShift = 24;
+constexpr std::uint32_t activityNumberShift = 16;
+constexpr std::uint32_t activityValueShift = 8;
+
 std::string slotModule(int slot)
 {
     return "Trigger " + std::to_string(slot + 1);
@@ -194,7 +201,14 @@ void GlitchDeckPlugin::registerPorts()
     audioPorts().addInput(std::move(input));
     audioPorts().addOutput(std::move(output));
 
-    notePorts().addInput(nullclap::NotePortSpec::midi(glitchdeck::ids::midiInput, "Performance MIDI"));
+    // Prefer raw MIDI so CC20-27 can reach the performance layer, but also accept
+    // native CLAP note events. Bitwig may choose either representation for notes;
+    // CC messages still require the raw-MIDI dialect.
+    notePorts().addInput(nullclap::NotePortSpec::dialects(
+        glitchdeck::ids::midiInput,
+        "Performance MIDI",
+        CLAP_NOTE_DIALECT_MIDI | CLAP_NOTE_DIALECT_CLAP,
+        CLAP_NOTE_DIALECT_MIDI));
 }
 
 void GlitchDeckPlugin::registerRemoteControls()
@@ -231,6 +245,7 @@ bool GlitchDeckPlugin::onActivate(double sampleRate, std::uint32_t, std::uint32_
     lastCcDown_ = {};
     uiQueueRead_.store(0, std::memory_order_relaxed);
     uiQueueWrite_.store(0, std::memory_order_relaxed);
+    midiActivity_.store(0, std::memory_order_relaxed);
     hasTransport_ = false;
     transportAnchorSample_ = 0;
     transportBlockStartSample_ = -1;
@@ -359,6 +374,15 @@ void GlitchDeckPlugin::onEvent(const clap_event_header_t& event) noexcept
             if (event.size >= sizeof(clap_event_midi_t))
                 handleMidiEvent(reinterpret_cast<const clap_event_midi_t&>(event));
             break;
+        case CLAP_EVENT_NOTE_ON:
+            if (event.size >= sizeof(clap_event_note_t))
+                handleNoteEvent(reinterpret_cast<const clap_event_note_t&>(event), true);
+            break;
+        case CLAP_EVENT_NOTE_OFF:
+        case CLAP_EVENT_NOTE_CHOKE:
+            if (event.size >= sizeof(clap_event_note_t))
+                handleNoteEvent(reinterpret_cast<const clap_event_note_t&>(event), false);
+            break;
         case CLAP_EVENT_PARAM_VALUE:
             if (event.size >= sizeof(clap_event_param_value_t))
                 handleParameterEvent(reinterpret_cast<const clap_event_param_value_t&>(event));
@@ -380,36 +404,54 @@ void GlitchDeckPlugin::handleTransportEvent(const clap_event_transport_t& event)
     transportBlockStartSample_ = streamSampleCounter_ - static_cast<std::int64_t>(event.header.time);
 }
 
-bool GlitchDeckPlugin::tryCaptureMidiLearn(std::uint8_t status, std::uint8_t data1, std::uint8_t data2) noexcept
+void GlitchDeckPlugin::recordMidiActivity(MidiBindingType type,
+                                          int number,
+                                          int channel,
+                                          int value,
+                                          bool down) noexcept
+{
+    number = std::clamp(number, 0, 127);
+    channel = std::clamp(channel, 1, 16);
+    value = std::clamp(value, 0, 127);
+
+    std::uint32_t packed = activityValid;
+    if (type == MidiBindingType::cc)
+        packed |= activityCc;
+    if (down)
+        packed |= activityDown;
+    packed |= static_cast<std::uint32_t>(channel - 1) << activityChannelShift;
+    packed |= static_cast<std::uint32_t>(number) << activityNumberShift;
+    packed |= static_cast<std::uint32_t>(value) << activityValueShift;
+    midiActivity_.store(packed, std::memory_order_release);
+}
+
+bool GlitchDeckPlugin::captureMidiLearn(MidiBindingType type, int number, int channel) noexcept
 {
     const auto slot = midiLearnSlot_.load(std::memory_order_acquire);
     if (slot < 0 || slot >= numSlots)
         return false;
 
-    const auto command = static_cast<std::uint8_t>(status & 0xF0u);
-    int type = -1;
-    int number = 0;
-
-    if (command == 0x90u && data2 > 0)
-    {
-        type = static_cast<int>(MidiBindingType::note);
-        number = data1;
-    }
-    else if (command == 0xB0u && data2 >= 64)
-    {
-        type = static_cast<int>(MidiBindingType::cc);
-        number = data1;
-    }
-
-    if (type < 0)
+    if (number < 0 || number > 127 || channel < 1 || channel > 16)
         return false;
 
-    learnedType_.store(type, std::memory_order_relaxed);
+    learnedType_.store(static_cast<int>(type), std::memory_order_relaxed);
     learnedNumber_.store(number, std::memory_order_relaxed);
-    learnedChannel_.store(static_cast<int>(status & 0x0Fu) + 1, std::memory_order_relaxed);
+    learnedChannel_.store(channel, std::memory_order_relaxed);
     learnedSlot_.store(slot, std::memory_order_release);
     midiLearnSlot_.store(-1, std::memory_order_release);
     return true;
+}
+
+bool GlitchDeckPlugin::tryCaptureMidiLearn(std::uint8_t status, std::uint8_t data1, std::uint8_t data2) noexcept
+{
+    const auto command = static_cast<std::uint8_t>(status & 0xF0u);
+    const auto channel = static_cast<int>(status & 0x0Fu) + 1;
+
+    if (command == 0x90u && data2 > 0)
+        return captureMidiLearn(MidiBindingType::note, data1, channel);
+    if (command == 0xB0u && data2 >= 64)
+        return captureMidiLearn(MidiBindingType::cc, data1, channel);
+    return false;
 }
 
 void GlitchDeckPlugin::handleMidiEvent(const clap_event_midi_t& event) noexcept
@@ -417,11 +459,21 @@ void GlitchDeckPlugin::handleMidiEvent(const clap_event_midi_t& event) noexcept
     const auto status = event.data[0];
     const auto data1 = event.data[1];
     const auto data2 = event.data[2];
-    if (tryCaptureMidiLearn(status, data1, data2))
-        return;
-
     const auto command = static_cast<std::uint8_t>(status & 0xF0u);
     const auto channel = static_cast<int>(status & 0x0Fu) + 1;
+
+    if (command == 0xB0u)
+    {
+        recordMidiActivity(MidiBindingType::cc, data1, channel, data2, data2 >= 64);
+    }
+    else if (command == 0x90u || command == 0x80u)
+    {
+        const auto down = command == 0x90u && data2 > 0;
+        recordMidiActivity(MidiBindingType::note, data1, channel, data2, down);
+    }
+
+    if (tryCaptureMidiLearn(status, data1, data2))
+        return;
 
     for (int slot = 0; slot < numSlots; ++slot)
     {
@@ -452,6 +504,35 @@ void GlitchDeckPlugin::handleMidiEvent(const clap_event_midi_t& event) noexcept
                 scheduleTrigger(slot, down, event.header.time);
             }
         }
+    }
+}
+
+void GlitchDeckPlugin::handleNoteEvent(const clap_event_note_t& event, bool down) noexcept
+{
+    if (event.key < 0 || event.key > 127 || event.channel < 0 || event.channel > 15)
+        return;
+
+    const auto number = static_cast<int>(event.key);
+    const auto channel = static_cast<int>(event.channel) + 1;
+    const auto velocity = std::clamp(static_cast<int>(std::lround(event.velocity * 127.0)), 0, 127);
+    recordMidiActivity(MidiBindingType::note, number, channel, velocity, down);
+
+    if (down && captureMidiLearn(MidiBindingType::note, number, channel))
+        return;
+
+    for (int slot = 0; slot < numSlots; ++slot)
+    {
+        const auto& id = ids_[static_cast<std::size_t>(slot)];
+        if (std::clamp(parameterInt(id.midiType), 0, 1) != static_cast<int>(MidiBindingType::note))
+            continue;
+
+        const auto configuredChannel = std::clamp(parameterInt(id.midiChannel), 0, 16);
+        if (configuredChannel != 0 && configuredChannel != channel)
+            continue;
+        if (std::clamp(parameterInt(id.midiNumber), 0, 127) != number)
+            continue;
+
+        scheduleTrigger(slot, down, event.header.time);
     }
 }
 
@@ -715,4 +796,22 @@ std::string GlitchDeckPlugin::midiBindingText(int slot) const
         : midiNoteName(number) + " (" + std::to_string(number) + ")";
     result += channel == 0 ? "  ·  OMNI" : "  ·  CH " + std::to_string(channel);
     return result;
+}
+
+std::string GlitchDeckPlugin::midiActivityText() const
+{
+    const auto packed = midiActivity_.load(std::memory_order_acquire);
+    if ((packed & activityValid) == 0)
+        return "NO HOST MIDI";
+
+    const auto isCc = (packed & activityCc) != 0;
+    const auto down = (packed & activityDown) != 0;
+    const auto channel = static_cast<int>((packed >> activityChannelShift) & 0x0Fu) + 1;
+    const auto number = static_cast<int>((packed >> activityNumberShift) & 0x7Fu);
+    const auto value = static_cast<int>((packed >> activityValueShift) & 0x7Fu);
+
+    if (isCc)
+        return "CC" + std::to_string(number) + " CH" + std::to_string(channel) + " " + std::to_string(value);
+
+    return midiNoteName(number) + " CH" + std::to_string(channel) + (down ? " ON" : " OFF");
 }

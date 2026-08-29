@@ -3,6 +3,7 @@
 #include "GlitchDeckPlugin.hpp"
 
 #include <nullclap/Gui.hpp>
+#include <nullclap/PhysicalPixelGuiSizing.hpp>
 #include <juce_gui_basics/juce_gui_basics.h>
 
 #include <cstdint>
@@ -31,20 +32,10 @@ public:
     bool setParent(const clap_window_t& window) noexcept override;
 
 private:
-    std::uint32_t physicalWidth() const noexcept;
-    std::uint32_t physicalHeight() const noexcept;
-    std::uint32_t toLogical(std::uint32_t physical) const noexcept;
-    std::uint32_t toPhysical(std::uint32_t logical) const noexcept;
     void applyLogicalEditorSize() noexcept;
 
     GlitchDeckPlugin& plugin_;
     std::unique_ptr<juce::ScopedJuceInitialiser_GUI> juceInitialiser_;
     std::unique_ptr<GlitchDeckEditor> editor_;
-
-    // JUCE component bounds are logical pixels. CLAP's Win32 GUI contract uses
-    // physical pixels, so keep the design size logical and translate at the host
-    // boundary using the scale supplied by clap_plugin_gui::set_scale().
-    std::uint32_t logicalWidth_ = 980;
-    std::uint32_t logicalHeight_ = 660;
-    double scale_ = 1.0;
+    nullclap::PhysicalPixelGuiSizing sizing_ { 980, 660, 820, 570, 1500, 1000 };
 };

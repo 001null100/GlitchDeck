@@ -280,17 +280,17 @@ GlitchEngine::StereoSample GlitchEngine::processSample(float dryLeft, float dryR
             const auto shaped = std::pow(progress, exponent);
             const auto direction = slot.config.effect == EffectType::pitchRise ? 1.0 : -1.0;
             const auto semitones = direction * 24.0 * static_cast<double>(slot.config.intensity)
-                * shaped * static_cast<double>(slot.envelope.current);
+                * shaped * static_cast<double>(envelope);
             playbackRate *= std::pow(2.0, semitones / 12.0);
         }
 
-        if (slot.config.effect == EffectType::tapeStop && slot.envelope.current > 0.0001f)
+        if (slot.config.effect == EffectType::tapeStop && envelope > 0.0001f)
         {
             const auto duration = std::max(1, millisecondsToSamples(slot.config.lengthMs));
             const auto progress = std::clamp(static_cast<double>(slot.activeSamples) / static_cast<double>(duration), 0.0, 1.0);
             const auto exponent = 0.25 + static_cast<double>(slot.config.shape) * 2.75;
             const auto stoppedRate = std::pow(std::max(0.0, 1.0 - progress), exponent);
-            const auto depth = static_cast<double>(slot.config.intensity) * static_cast<double>(slot.envelope.current);
+            const auto depth = static_cast<double>(slot.config.intensity) * static_cast<double>(envelope);
             playbackRate *= 1.0 + depth * (stoppedRate - 1.0);
         }
 

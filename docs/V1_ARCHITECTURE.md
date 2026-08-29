@@ -46,15 +46,17 @@ Writable CLAP parameters participate in project state so hosts can reproduce the
 
 ## Temporal grammar
 
-Stutter and Microloop explicitly capture and define a loop region. Reverse changes the direction of the shared playback head. Pitch Dive and Pitch Rise alter its playback rate. Tape Stop applies a deceleration curve to the same transport.
+Stutter and Microloop are the repeating transports. They capture a recent region and wrap the shared read head inside that region.
 
-Standalone gestures do not all use the same transport mode:
+Standalone Reverse, Pitch Dive, and Pitch Rise use **one-shot captures** instead. They read a bounded recent region once and clamp at its endpoint rather than wrapping back across an arbitrary waveform seam. This distinction matters most for Pitch Rise: an accelerating read head can cross a short capture boundary many times per gesture, turning a mathematically valid wrap into a rapid audible restart/click pattern.
 
-- **Reverse** uses a bounded recent capture. A single backwards head cannot remain meaningfully attached to a live write head forever, so an unbounded streaming reverse would simply walk into older and older history.
-- **Pitch Rise** also uses a bounded recent capture. Once playback exceeds 1x, a streaming read head can overtake the live write head and reach unwritten/current history; wrapping inside a known capture prevents that failure.
-- **Pitch Dive** and **Tape Stop** can safely use a recent-history streaming head because their playback rate does not outrun the writer.
-- When Reverse or Pitch Rise is added to an existing Stutter/Microloop, it modifies that existing captured region instead of recapturing it.
-- If the loop source is released while Reverse or Pitch Rise remains active, the captured region is preserved. If only Pitch Dive or Tape Stop remains, playback re-anchors to recent-history streaming.
+- **Reverse alone** starts at the newest end of a recent capture, travels backward once, then holds the oldest captured sample while the gesture remains held.
+- **Pitch Rise alone** traverses a longer recent capture once. The capture is sized conservatively for the maximum configured rise speed so the head does not overtake the live writer or wrap during the ramp. If held past the available capture, it holds the endpoint until release.
+- **Pitch Dive alone** also uses a bounded one-shot capture, so its source remains deterministic and cannot drift into unrelated history.
+- **Tape Stop alone** uses a recent-history streaming head because its playback rate only decelerates and therefore cannot overtake the live writer.
+- **Reverse/Pitch added to Stutter or Microloop** act as modifiers of the existing repeating loop. They do not replace that shared loop with a one-shot capture.
+- Capture length is limited by the amount of history actually filled since activation, preventing newly loaded instances from reading uninitialized/zero history.
+- Fractional interpolation in captured transport always keeps both interpolation taps inside the capture. Repeating captures wrap both taps; one-shot captures clamp both taps at the endpoint.
 
 This is intentionally different from serially instantiating independent delay-style effects. A held Stutter plus Pitch Dive should sound like a single repeated fragment progressively descending, not like a pitch effect receiving an unrelated stutter processor.
 
@@ -64,7 +66,7 @@ Raw MIDI, native CLAP notes, and host parameter events retain their CLAP sample 
 
 ## GUI scaling
 
-CLAP's Win32 GUI contract expresses child-window dimensions in physical pixels, while JUCE component bounds are logical/DPI-scaled coordinates. GlitchDeck keeps its editor dimensions in logical pixels, records the scale supplied through `clap_plugin_gui::set_scale()`, and converts physical CLAP sizes to/from logical JUCE sizes at the host boundary. JUCE remains responsible for the actual native Windows DPI transform. This prevents the embedded child HWND from becoming wider than Bitwig's viewport at 125%, 150%, or other non-100% display scaling.
+CLAP's Win32 GUI contract expresses child-window dimensions in physical pixels, while JUCE component bounds are logical/DPI-scaled coordinates. The physical/logical conversion is centralized upstream in null-clap's `PhysicalPixelGuiSizing` helper. GlitchDeck supplies only its logical design/min/max sizes and delegates host scale, physical `get_size`/`set_size`, and resize clamping to the framework helper. This is the same upstream path used by the validated build 43 scaling fix and avoids each plug-in carrying a slightly different Win32 DPI implementation.
 
 ## Real-time constraints
 

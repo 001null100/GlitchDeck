@@ -3,6 +3,7 @@
 #include "GlitchDeckPlugin.hpp"
 
 #include <nullclap/Gui.hpp>
+#include <nullclap/PhysicalPixelGuiSizing.hpp>
 #include <juce_gui_basics/juce_gui_basics.h>
 
 #include <cstdint>
@@ -31,9 +32,10 @@ public:
     bool setParent(const clap_window_t& window) noexcept override;
 
 private:
+    void applyLogicalEditorSize() noexcept;
+
     GlitchDeckPlugin& plugin_;
     std::unique_ptr<juce::ScopedJuceInitialiser_GUI> juceInitialiser_;
     std::unique_ptr<GlitchDeckEditor> editor_;
-    std::uint32_t width_ = 980;
-    std::uint32_t height_ = 660;
+    nullclap::PhysicalPixelGuiSizing sizing_ { 980, 660, 820, 570, 1500, 1000 };
 };

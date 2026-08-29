@@ -78,6 +78,7 @@ private:
 
     static bool isTransportEffect(EffectType type) noexcept;
     static bool isLoopDefiningEffect(EffectType type) noexcept;
+    static bool requiresCapturedTransport(EffectType type) noexcept;
     static float lerp(float amount, float a, float b) noexcept;
 
     int wrapIndex(int index) const noexcept;

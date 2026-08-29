@@ -182,7 +182,7 @@ GlitchDeckEditor::GlitchDeckEditor(GlitchDeckPlugin& plugin)
     styleLabel(effectLabel_, "EFFECT");
     styleLabel(quantizeLabel_, "QUANTIZE");
     styleLabel(stereoLabel_, "STEREO");
-    styleLabel(midiLabel_, "PAD / MIDI BINDING");
+    styleLabel(midiLabel_, "MIDI IN");
     styleLabel(intensityLabel_, "INTENSITY");
     styleLabel(lengthLabel_, "LENGTH");
     styleLabel(attackLabel_, "ATTACK");
@@ -419,9 +419,11 @@ void GlitchDeckEditor::syncControlsFromPlugin()
 void GlitchDeckEditor::refreshMidiLearnButton()
 {
     const auto learning = plugin_.isMidiLearning(selectedSlot_);
+    const auto activity = toJuce(plugin_.midiActivityText());
+    midiLabel_.setText("MIDI IN  ·  " + activity, juce::dontSendNotification);
     midiLearnButton_.setToggleState(learning, juce::dontSendNotification);
     midiLearnButton_.setButtonText(learning
-        ? "LEARNING… HIT A PAD"
+        ? "LEARNING…  " + activity
         : "LEARN  ·  " + toJuce(plugin_.midiBindingText(selectedSlot_)));
 }
 

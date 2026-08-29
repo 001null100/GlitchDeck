@@ -9,12 +9,12 @@ include(FetchContent)
 include(CTest)
 
 # Pin host plumbing to the exact null-clap revision under Bitwig validation for
-# raw MIDI process delivery, hybrid audio/note routing metadata, raw-MIDI/MPE
-# input compatibility, physical-pixel GUI sizing, process context, and state.
+# explicit MIDI-controlled audio-effect role metadata, raw MIDI process delivery,
+# physical-pixel GUI sizing, process context, and state.
 FetchContent_Declare(
     null_clap
     GIT_REPOSITORY https://github.com/001null100/null-clap.git
-    GIT_TAG 1fb7184a2fd6ae5640142539d184ae8d1337584d
+    GIT_TAG 04519c11d6cd0f311cad55be91e534366cbc9b8d
     GIT_SHALLOW FALSE
 )
 set(NULLCLAP_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
@@ -45,11 +45,6 @@ nullclap_add_plugin(GlitchDeck
         Source/JuceGuiDelegate.cpp
         Source/JuceGuiDelegate.hpp
 )
-
-# GlitchDeck is an audio processor whose performance layer consumes Bitwig's
-# note/MIDI signal. Let null-clap expose that hybrid routing role consistently at
-# both factory discovery and clap_plugin_t instance descriptor boundaries.
-nullclap_enable_note_input_routing(GlitchDeck)
 
 target_link_libraries(GlitchDeck PRIVATE
     juce::juce_gui_extra

@@ -129,6 +129,37 @@ void reverseRecapturesOverStutterLikeAlphaSix()
     expectNear(test, engine.processSample(101.0f, 101.0f, 1.0f).left, 98.0f);
     expectNear(test, engine.processSample(102.0f, 102.0f, 1.0f).left, 97.0f);
 }
+
+void temporalIntensityDoesNotBecomeDryMix()
+{
+    constexpr auto test = "temporalIntensityDoesNotBecomeDryMix";
+    GlitchEngine engine;
+    engine.prepare(1000.0, 2);
+    auto config = configFor(GlitchEngine::EffectType::reverse);
+    config.intensity = 0.25f;
+    engine.setSlotConfig(0, config);
+    primeRamp(engine);
+
+    engine.trigger(0, true);
+
+    // The live sample is deliberately far away from the captured material. If
+    // Intensity were still used as wet/dry, this would land near 774 instead of 97.
+    const auto output = engine.processSample(1000.0f, 1000.0f, 1.0f);
+    expectNear(test, output.left, 97.0f);
+}
+
+void globalMixStillControlsDryWet()
+{
+    constexpr auto test = "globalMixStillControlsDryWet";
+    GlitchEngine engine;
+    engine.prepare(1000.0, 2);
+    engine.setSlotConfig(0, configFor(GlitchEngine::EffectType::reverse));
+    primeRamp(engine);
+
+    engine.trigger(0, true);
+    const auto output = engine.processSample(1000.0f, 1000.0f, 0.5f);
+    expectNear(test, output.left, 548.5f);
+}
 } // namespace
 
 int main()
@@ -138,6 +169,8 @@ int main()
     pitchDiveMatchesAlphaSixCapture();
     pitchRiseMatchesAlphaSixReadHead();
     reverseRecapturesOverStutterLikeAlphaSix();
-    std::cout << "GlitchEngine alpha-6 fidelity tests passed\n";
+    temporalIntensityDoesNotBecomeDryMix();
+    globalMixStillControlsDryWet();
+    std::cout << "GlitchEngine alpha-6 fidelity + wet-path tests passed\n";
     return EXIT_SUCCESS;
 }

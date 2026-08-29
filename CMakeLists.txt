@@ -9,12 +9,12 @@ include(FetchContent)
 include(CTest)
 
 # Pin host plumbing to the exact null-clap revision under Bitwig validation for
-# raw MIDI process delivery, hybrid audio/note routing metadata, physical-pixel
-# GUI sizing, process/transport context, and writable-parameter state persistence.
+# raw MIDI process delivery, hybrid audio/note routing metadata, controller-input
+# note dialects, physical-pixel GUI sizing, process/transport context, and state.
 FetchContent_Declare(
     null_clap
     GIT_REPOSITORY https://github.com/001null100/null-clap.git
-    GIT_TAG ac6dd7330c09ee5233bd9575585748ee371b2b1b
+    GIT_TAG 3206fbaa5ad852a1488fe2967ffcc808493c9e81
     GIT_SHALLOW FALSE
 )
 set(NULLCLAP_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)

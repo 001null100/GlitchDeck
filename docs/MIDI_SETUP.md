@@ -35,29 +35,48 @@ The editor shows the last MIDI/note event that **the host actually placed in Gli
 
 An external MIDI tester only proves that the controller emitted bytes. It does not prove that the CLAP instance received them.
 
-## Current Bitwig finding
+## What has already been ruled out
 
-The decisive control test has already been performed: a **Bitwig-generated MIDI CC device immediately upstream of GlitchDeck still produced `NO HOST MIDI`**. That means this is not currently being treated as a Nektar-only configuration problem and should not be "fixed" inside GlitchDeck's CC parser.
+A **Bitwig-generated MIDI CC device immediately upstream of GlitchDeck also produced `NO HOST MIDI`**. The failure therefore occurs before GlitchDeck's CC parser and is not being treated as a Nektar-only configuration problem.
 
-The current candidate therefore moves the host-routing change into null-clap itself:
+Two earlier host-routing experiments were also rejected after Bitwig testing:
 
-- null-clap PR #4 adds a reusable `nullclap_enable_note_input_routing(target)` capability.
-- The capability preserves the consumer's audio-effect descriptor features and adds host-facing `note-effect` metadata at the CLAP factory boundary.
-- The created `clap_plugin_t` is explicitly pointed at the same augmented descriptor, so discovery metadata and instance metadata cannot disagree.
-- null-clap's unit test creates a real probe plug-in through the factory and passes a live raw channel-16 CC (`0xBF`, CC20, 127) through `clap_process_t::in_events`; `Plugin::onEvent()` must receive the bytes unchanged.
-- GlitchDeck opts into that capability instead of carrying a Bitwig-specific descriptor workaround.
+- advertising GlitchDeck as `audio-effect + note-effect`
+- automatically adding the `MIDI_MPE` dialect to raw-MIDI inputs
 
-## Test the framework candidate
+Neither made Bitwig deliver the event, and both were broader than the CLAP semantics justified.
 
-With the candidate CLAP installed, perform this first:
+## Current host-role candidate
+
+The current null-clap candidate models GlitchDeck as what it actually is: a stereo audio effect whose audio output is also controlled by incoming note/MIDI events.
+
+The CLAP descriptor therefore advertises:
+
+- `audio-effect`
+- `instrument`
+- `stereo`
+
+CLAP defines `instrument` as a plug-in which processes note events and produces audio. `note-effect` is intended for plug-ins which process or generate note events, which GlitchDeck does not do.
+
+The performance input remains ordinary and explicit:
+
+- supported dialects: raw MIDI + native CLAP notes
+- preferred dialect: raw MIDI
+- no implicit MIDI-MPE capability
+
+null-clap independently tests a stereo audio-input/output probe with this role profile and verifies that a live channel-16 raw CC (`0xBF`, CC20, 127) reaches `Plugin::onEvent()` byte-for-byte when the host supplies it.
+
+## Test the current candidate
+
+With the candidate CLAP installed:
 
 1. Put Bitwig's **MIDI CC** device immediately before GlitchDeck.
 2. Send CC20 on channel 16 at 127, then 0.
 3. Watch `MIDI IN`.
 
-If it now shows `CC20 CH16 127/0`, the framework routing metadata solved the host boundary. Then test the physical pads and MIDI Learn.
+If it shows `CC20 CH16 127` and `CC20 CH16 0`, the host-role classification was the missing routing piece. Then test the physical pads and MIDI Learn.
 
-If it **still** says `NO HOST MIDI`, stop there. The framework's own process-event contract is already proven by CI, so the remaining problem is Bitwig's construction of the CLAP note/MIDI route for this kind of audio effect. That result is useful and should drive the next null-clap/host-compatibility experiment rather than another GlitchDeck parser rewrite.
+If it still says `NO HOST MIDI`, stop there. Do not debug mappings or GlitchDeck's parser. The next step is a null-clap host-role matrix probe so the remaining descriptor combinations can be tested in one Bitwig pass instead of changing GlitchDeck repeatedly.
 
 ## Learn behavior once MIDI arrives
 

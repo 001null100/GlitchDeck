@@ -107,27 +107,12 @@ void GlitchEngine::trigger(int slotIndex, bool down) noexcept
                 anotherTransportIsActive |= other.active && isTransportEffect(other.config.effect);
             }
 
-            if (isLoopDefiningEffect(slot.config.effect))
-            {
+            if (slot.config.effect == EffectType::tapeStop && !anotherTransportIsActive)
+                startStreamingTransport();
+            else if (isLoopDefiningEffect(slot.config.effect))
                 captureLoopForSlot(slotIndex);
-            }
-            else if (!anotherTransportIsActive)
-            {
-                // Reverse and Pitch Rise cannot run indefinitely against a live
-                // write head with a single read pointer. Reverse walks away from
-                // the present forever, while Pitch Rise (>1x) overtakes unwritten
-                // history. Give those standalone gestures a bounded capture. When
-                // they are added to an existing Stutter/Microloop they remain true
-                // modifiers and do not recapture the shared region.
-                if (requiresCapturedTransport(slot.config.effect))
-                    captureLoopForSlot(slotIndex);
-                else
-                    startStreamingTransport();
-            }
             else
-            {
                 transportEngaged = true;
-            }
         }
     }
     else
@@ -155,12 +140,9 @@ bool GlitchEngine::isTransportEffect(EffectType type) noexcept
 bool GlitchEngine::isLoopDefiningEffect(EffectType type) noexcept
 {
     return type == EffectType::stutter
-        || type == EffectType::microloop;
-}
-
-bool GlitchEngine::requiresCapturedTransport(EffectType type) noexcept
-{
-    return type == EffectType::reverse
+        || type == EffectType::microloop
+        || type == EffectType::reverse
+        || type == EffectType::pitchDive
         || type == EffectType::pitchRise;
 }
 
@@ -202,10 +184,6 @@ float GlitchEngine::readCapturedHistory(int channel, double position) const noex
     if (historySize <= 1 || loopLength <= 1)
         return readHistory(channel, position);
 
-    // Convert the absolute circular-history position to a fractional offset inside
-    // the active capture, then wrap BOTH interpolation taps inside that region.
-    // Without this, a fractional head near the final captured sample blends with
-    // the next global-history sample, leaking live/unwritten audio into Pitch Rise.
     auto offset = wrapPosition(position) - static_cast<double>(loopStart);
     if (offset < 0.0)
         offset += static_cast<double>(historySize);
@@ -261,35 +239,18 @@ void GlitchEngine::startStreamingTransport() noexcept
 
 void GlitchEngine::refreshTransportAfterRelease() noexcept
 {
-    bool anyLoopSource = false;
-    bool anyCapturedModifier = false;
-    bool anyStreamingModifier = false;
-
+    bool anyLoop = false;
+    bool anyTape = false;
     for (const auto& slot : slots)
     {
-        if (!slot.active || !isTransportEffect(slot.config.effect))
+        if (!slot.active)
             continue;
-
-        anyLoopSource |= isLoopDefiningEffect(slot.config.effect);
-        anyCapturedModifier |= requiresCapturedTransport(slot.config.effect);
-        anyStreamingModifier |= !isLoopDefiningEffect(slot.config.effect)
-            && !requiresCapturedTransport(slot.config.effect);
+        anyLoop |= isLoopDefiningEffect(slot.config.effect);
+        anyTape |= slot.config.effect == EffectType::tapeStop;
     }
 
-    if (anyLoopSource || anyCapturedModifier)
-    {
-        // Preserve the existing captured region. In particular, releasing a
-        // Stutter while Reverse remains held should keep reversing that fragment
-        // instead of suddenly wandering backward through the entire history.
-        streamingTransport = false;
-        transportEngaged = true;
-    }
-    else if (anyStreamingModifier)
-    {
-        // Pitch Dive and Tape Stop are valid against a recent-history streaming
-        // head. Re-anchor to recent audio when a loop source disappears.
-        startStreamingTransport();
-    }
+    if (!anyLoop && anyTape)
+        streamingTransport = true;
 }
 
 GlitchEngine::StereoSample GlitchEngine::processSample(float dryLeft, float dryRight, float globalMix) noexcept
@@ -352,7 +313,7 @@ GlitchEngine::StereoSample GlitchEngine::processSample(float dryLeft, float dryR
             const auto progress = std::clamp(static_cast<double>(slot.activeSamples) / static_cast<double>(duration), 0.0, 1.0);
             const auto exponent = 0.25 + static_cast<double>(slot.config.shape) * 2.75;
             const auto stoppedRate = std::pow(std::max(0.0, 1.0 - progress), exponent);
-            const auto depth = static_cast<double>(slot.config.intensity) * static_cast<double>(envelope);
+            const auto depth = static_cast<double>(slot.config.intensity) * static_cast<double>(slot.envelope.current);
             playbackRate *= 1.0 + depth * (stoppedRate - 1.0);
         }
 

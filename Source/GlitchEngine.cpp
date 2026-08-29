@@ -108,11 +108,26 @@ void GlitchEngine::trigger(int slotIndex, bool down) noexcept
             }
 
             if (isLoopDefiningEffect(slot.config.effect))
+            {
                 captureLoopForSlot(slotIndex);
+            }
             else if (!anotherTransportIsActive)
-                startStreamingTransport();
+            {
+                // Reverse and Pitch Rise cannot run indefinitely against a live
+                // write head with a single read pointer. Reverse walks away from
+                // the present forever, while Pitch Rise (>1x) overtakes unwritten
+                // history. Give those standalone gestures a bounded capture. When
+                // they are added to an existing Stutter/Microloop they remain true
+                // modifiers and do not recapture the shared region.
+                if (requiresCapturedTransport(slot.config.effect))
+                    captureLoopForSlot(slotIndex);
+                else
+                    startStreamingTransport();
+            }
             else
+            {
                 transportEngaged = true;
+            }
         }
     }
     else
@@ -141,6 +156,12 @@ bool GlitchEngine::isLoopDefiningEffect(EffectType type) noexcept
 {
     return type == EffectType::stutter
         || type == EffectType::microloop;
+}
+
+bool GlitchEngine::requiresCapturedTransport(EffectType type) noexcept
+{
+    return type == EffectType::reverse
+        || type == EffectType::pitchRise;
 }
 
 int GlitchEngine::wrapIndex(int index) const noexcept
@@ -213,20 +234,34 @@ void GlitchEngine::startStreamingTransport() noexcept
 
 void GlitchEngine::refreshTransportAfterRelease() noexcept
 {
-    bool anyLoop = false;
-    bool anyTransport = false;
+    bool anyLoopSource = false;
+    bool anyCapturedModifier = false;
+    bool anyStreamingModifier = false;
+
     for (const auto& slot : slots)
     {
         if (!slot.active || !isTransportEffect(slot.config.effect))
             continue;
-        anyTransport = true;
-        anyLoop |= isLoopDefiningEffect(slot.config.effect);
+
+        anyLoopSource |= isLoopDefiningEffect(slot.config.effect);
+        anyCapturedModifier |= requiresCapturedTransport(slot.config.effect);
+        anyStreamingModifier |= !isLoopDefiningEffect(slot.config.effect)
+            && !requiresCapturedTransport(slot.config.effect);
     }
 
-    if (!anyLoop && anyTransport)
+    if (anyLoopSource || anyCapturedModifier)
     {
-        streamingTransport = true;
+        // Preserve the existing captured region. In particular, releasing a
+        // Stutter while Reverse remains held should keep reversing that fragment
+        // instead of suddenly wandering backward through the entire history.
+        streamingTransport = false;
         transportEngaged = true;
+    }
+    else if (anyStreamingModifier)
+    {
+        // Pitch Dive and Tape Stop are valid against a recent-history streaming
+        // head. Re-anchor to recent audio when a loop source disappears.
+        startStreamingTransport();
     }
 }
 

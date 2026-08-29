@@ -4,7 +4,7 @@ GlitchDeck is designed to let a controller keybed keep behaving like a musical k
 
 ## Use the CLAP build in Bitwig
 
-GlitchDeck V1 is CLAP-only. The native CLAP note port exposes raw MIDI events to the plugin, including Control Change messages, so GlitchDeck's internal MIDI Learn can see controller-pad CC traffic directly.
+GlitchDeck V1 is CLAP-only. Its performance note port advertises both raw MIDI and native CLAP note events, with raw MIDI preferred so Control Change messages can reach plugin-side bindings and MIDI Learn.
 
 On Windows, the standard system CLAP directory is:
 
@@ -14,7 +14,7 @@ After copying `GlitchDeck.clap` there, rescan plug-ins in Bitwig and load the **
 
 ## Recommended scheme: pads send CC, keys send notes
 
-Do **not** assign the GlitchDeck pads to C1-G1 notes if those pitches are also reachable from the keybed. A MIDI Note 36 from a pad is indistinguishable from MIDI Note 36 from a key.
+Do **not** assign the GlitchDeck pads to C1-G1 notes if those pitches are also reachable from the keybed. A MIDI Note 36 from a pad is indistinguishable from MIDI Note 36 from a key unless you separate them by channel.
 
 Instead, configure the pads as momentary MIDI CC trigger/release controls:
 
@@ -44,7 +44,7 @@ The LX mk3 can program each pad independently.
 
 Now the pads no longer generate musical notes, so playing the same pitches on the keybed cannot accidentally trigger GlitchDeck and striking a pad cannot play the instrument.
 
-## GlitchDeck MIDI Learn
+## GlitchDeck MIDI Learn and the MIDI IN diagnostic
 
 For any trigger slot:
 
@@ -53,9 +53,29 @@ For any trigger slot:
 3. Hit the physical pad once.
 4. The button updates to the received binding, for example `CC 20 · CH 16`.
 
+The label above Learn continuously shows the last MIDI/note event that **Bitwig actually delivered to GlitchDeck**:
+
+- `MIDI IN · NO HOST MIDI` means the plugin has not received a qualifying raw MIDI or native CLAP note event since activation.
+- `MIDI IN · CC23 CH16 127` means Bitwig delivered CC23, channel 16, value 127 to the plugin.
+- note input appears as a compact note/channel ON or OFF message.
+
+This is deliberately different from an external MIDI tester. A tester proves that the controller emitted bytes. It does **not** prove that Bitwig's controller integration inserted those bytes into the track/device-chain note signal that reaches a CLAP plug-in.
+
 Learn accepts Note On messages or CC values >= 64. For a learned CC binding, values >= 64 are treated as pad-down and values < 64 as pad-up. The Nektar's `Trg` assignment therefore maps naturally to hold/release behavior.
 
-If **LEARN** remains waiting after you hit a pad, GlitchDeck did not receive the raw CLAP MIDI event. That is a plugin/host routing bug worth reporting.
+## If the Nektar CCs still do not appear
+
+Use the MIDI IN diagnostic to separate two failure classes:
+
+1. Arm Learn and hit a Nektar pad.
+2. If the label changes to the expected `CCxx CH16 127` but Learn does not complete or the slot does not trigger, that is a GlitchDeck bug.
+3. If the label remains `NO HOST MIDI` while a standalone MIDI tester sees the Nektar CC, the event is being filtered or consumed before it reaches GlitchDeck.
+
+For a control test, generate a CC inside Bitwig immediately upstream of GlitchDeck using a Bitwig MIDI/CC device or another source known to feed the device-chain note signal. Send, for example, CC20 on channel 16 with value 127 then 0. If **that** appears in `MIDI IN` and triggers/learns correctly while the physical Nektar CC does not, the native CLAP path is working and the controller integration is the filter.
+
+The Nektar/Bitwig integration also uses Bitwig Remote Controls heavily. GlitchDeck exposes a **Triggers** remote-control page containing Trigger 1-8, so Bitwig's own hardware/remote mapping is the immediate fallback even when controller CC bytes are not forwarded into the track stream.
+
+A second fallback is to program the pads as otherwise-unused notes on channel 16. GlitchDeck accepts both raw MIDI notes and native CLAP Note On/Off events, so this can work when a controller script forwards notes but filters arbitrary CCs. Use note numbers outside the range you normally play if you want to avoid keybed collisions.
 
 ## Why channel 16?
 

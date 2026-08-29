@@ -25,6 +25,12 @@ void expectNear(std::string_view test, float actual, float expected)
         fail(test, "unexpected sample", actual, expected);
 }
 
+void expectBetween(std::string_view test, float actual, float minimum, float maximum)
+{
+    if (!std::isfinite(actual) || actual < minimum - epsilon || actual > maximum + epsilon)
+        fail(test, "sample escaped captured region", actual, minimum);
+}
+
 void primeRamp(GlitchEngine& engine, int samples = 100)
 {
     for (int i = 0; i < samples; ++i)
@@ -43,38 +49,56 @@ GlitchEngine::SlotConfig configFor(GlitchEngine::EffectType effect)
     return config;
 }
 
-void reverseUsesStreamingHistory()
+void reverseStandaloneUsesBoundedCapture()
 {
-    constexpr auto test = "reverseUsesStreamingHistory";
+    constexpr auto test = "reverseStandaloneUsesBoundedCapture";
     GlitchEngine engine;
     engine.prepare(1000.0, 2);
     engine.setSlotConfig(0, configFor(GlitchEngine::EffectType::reverse));
     primeRamp(engine);
 
     engine.trigger(0, true);
-    for (int i = 0; i < 5; ++i)
+    constexpr float expected[] { 97.0f, 96.0f, 95.0f, 94.0f, 97.0f, 96.0f };
+    for (int i = 0; i < static_cast<int>(std::size(expected)); ++i)
     {
         const auto output = engine.processSample(100.0f + static_cast<float>(i), 100.0f + static_cast<float>(i), 1.0f);
-        expectNear(test, output.left, 98.0f - static_cast<float>(i));
+        expectNear(test, output.left, expected[i]);
     }
 }
 
-void pitchGesturesDoNotImplicitlyCaptureLoops()
+void pitchRiseCannotOvertakeLiveWriteHead()
 {
-    constexpr auto test = "pitchGesturesDoNotImplicitlyCaptureLoops";
-    for (const auto effect : { GlitchEngine::EffectType::pitchDive, GlitchEngine::EffectType::pitchRise })
-    {
-        GlitchEngine engine;
-        engine.prepare(1000.0, 2);
-        auto config = configFor(effect);
-        config.lengthMs = 1500.0f;
-        engine.setSlotConfig(0, config);
-        primeRamp(engine);
+    constexpr auto test = "pitchRiseCannotOvertakeLiveWriteHead";
+    GlitchEngine engine;
+    engine.prepare(1000.0, 2);
+    auto config = configFor(GlitchEngine::EffectType::pitchRise);
+    config.lengthMs = 16.0f;
+    engine.setSlotConfig(0, config);
+    primeRamp(engine);
 
-        engine.trigger(0, true);
-        const auto output = engine.processSample(100.0f, 100.0f, 1.0f);
-        expectNear(test, output.left, 98.0f);
+    engine.trigger(0, true);
+    // The standalone rise owns the recent 16-sample capture (82..97). Even after
+    // accelerating well above 1x it must wrap inside that region rather than read
+    // unwritten/current samples from in front of the live write head.
+    for (int i = 0; i < 64; ++i)
+    {
+        const auto output = engine.processSample(100.0f + static_cast<float>(i), 100.0f + static_cast<float>(i), 1.0f);
+        expectBetween(test, output.left, 82.0f, 97.0f);
     }
+}
+
+void pitchDiveStillUsesStreamingHistory()
+{
+    constexpr auto test = "pitchDiveStillUsesStreamingHistory";
+    GlitchEngine engine;
+    engine.prepare(1000.0, 2);
+    auto config = configFor(GlitchEngine::EffectType::pitchDive);
+    config.lengthMs = 1500.0f;
+    engine.setSlotConfig(0, config);
+    primeRamp(engine);
+
+    engine.trigger(0, true);
+    expectNear(test, engine.processSample(100.0f, 100.0f, 1.0f).left, 98.0f);
 }
 
 void stutterStillDefinesALoop()
@@ -94,9 +118,9 @@ void stutterStillDefinesALoop()
     }
 }
 
-void releasingLoopReturnsRemainingModifierToStreaming()
+void reverseJoinsExistingLoopWithoutRecapture()
 {
-    constexpr auto test = "releasingLoopReturnsRemainingModifierToStreaming";
+    constexpr auto test = "reverseJoinsExistingLoopWithoutRecapture";
     GlitchEngine engine;
     engine.prepare(1000.0, 2);
     engine.setSlotConfig(0, configFor(GlitchEngine::EffectType::stutter));
@@ -107,10 +131,28 @@ void releasingLoopReturnsRemainingModifierToStreaming()
     expectNear(test, engine.processSample(100.0f, 100.0f, 1.0f).left, 94.0f);
 
     engine.trigger(1, true);
+    // If Reverse recaptured here, the value would come from a newly-created region.
+    // It should instead flip the already-playing Stutter head at its current position.
     expectNear(test, engine.processSample(101.0f, 101.0f, 1.0f).left, 95.0f);
+    expectNear(test, engine.processSample(102.0f, 102.0f, 1.0f).left, 94.0f);
+}
+
+void releasingLoopKeepsReverseOnCapturedRegion()
+{
+    constexpr auto test = "releasingLoopKeepsReverseOnCapturedRegion";
+    GlitchEngine engine;
+    engine.prepare(1000.0, 2);
+    engine.setSlotConfig(0, configFor(GlitchEngine::EffectType::stutter));
+    engine.setSlotConfig(1, configFor(GlitchEngine::EffectType::reverse));
+    primeRamp(engine);
+
+    engine.trigger(0, true);
+    engine.processSample(100.0f, 100.0f, 1.0f); // 94, head -> 95
+    engine.trigger(1, true);
+    engine.processSample(101.0f, 101.0f, 1.0f); // 95, head -> 94
 
     engine.trigger(0, false);
-    constexpr float expected[] { 94.0f, 93.0f, 92.0f, 91.0f, 90.0f, 89.0f };
+    constexpr float expected[] { 94.0f, 97.0f, 96.0f, 95.0f, 94.0f, 97.0f };
     for (int i = 0; i < static_cast<int>(std::size(expected)); ++i)
     {
         const auto output = engine.processSample(102.0f + static_cast<float>(i), 102.0f + static_cast<float>(i), 1.0f);
@@ -121,10 +163,12 @@ void releasingLoopReturnsRemainingModifierToStreaming()
 
 int main()
 {
-    reverseUsesStreamingHistory();
-    pitchGesturesDoNotImplicitlyCaptureLoops();
+    reverseStandaloneUsesBoundedCapture();
+    pitchRiseCannotOvertakeLiveWriteHead();
+    pitchDiveStillUsesStreamingHistory();
     stutterStillDefinesALoop();
-    releasingLoopReturnsRemainingModifierToStreaming();
+    reverseJoinsExistingLoopWithoutRecapture();
+    releasingLoopKeepsReverseOnCapturedRegion();
     std::cout << "GlitchEngine regression tests passed\n";
     return EXIT_SUCCESS;
 }

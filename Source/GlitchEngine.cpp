@@ -56,14 +56,12 @@ void GlitchEngine::reset() noexcept
 {
     std::fill(historyLeft.begin(), historyLeft.end(), 0.0f);
     std::fill(historyRight.begin(), historyRight.end(), 0.0f);
-    historySamplesAvailable = 0;
     writePosition = 0;
     readPosition = 0.0;
     loopStart = 0;
     loopLength = 1;
     transportEngaged = false;
     streamingTransport = false;
-    capturedTransportLoops = true;
     crushPhase = 0;
     heldCrushLeft = 0.0f;
     heldCrushRight = 0.0f;
@@ -109,29 +107,12 @@ void GlitchEngine::trigger(int slotIndex, bool down) noexcept
                 anotherTransportIsActive |= other.active && isTransportEffect(other.config.effect);
             }
 
-            if (isLoopDefiningEffect(slot.config.effect))
-            {
-                captureLoopForSlot(slotIndex, true);
-            }
-            else if (requiresCapturedTransport(slot.config.effect)
-                     && (!anotherTransportIsActive || streamingTransport))
-            {
-                // Standalone Reverse/Pitch gestures traverse a recent capture once.
-                // A Pitch Rise therefore never wraps a rapidly accelerating head
-                // around a short region, which was the source of the audible
-                // restarts/clicks in the previous implementation.
-                captureLoopForSlot(slotIndex, false);
-            }
-            else if (slot.config.effect == EffectType::tapeStop && !anotherTransportIsActive)
-            {
+            if (slot.config.effect == EffectType::tapeStop && !anotherTransportIsActive)
                 startStreamingTransport();
-            }
+            else if (isLoopDefiningEffect(slot.config.effect))
+                captureLoopForSlot(slotIndex);
             else
-            {
-                // A modifier added to an existing Stutter/Microloop keeps that
-                // shared loop rather than replacing it with a new capture.
                 transportEngaged = true;
-            }
         }
     }
     else
@@ -159,12 +140,8 @@ bool GlitchEngine::isTransportEffect(EffectType type) noexcept
 bool GlitchEngine::isLoopDefiningEffect(EffectType type) noexcept
 {
     return type == EffectType::stutter
-        || type == EffectType::microloop;
-}
-
-bool GlitchEngine::requiresCapturedTransport(EffectType type) noexcept
-{
-    return type == EffectType::reverse
+        || type == EffectType::microloop
+        || type == EffectType::reverse
         || type == EffectType::pitchDive
         || type == EffectType::pitchRise;
 }
@@ -202,94 +179,28 @@ float GlitchEngine::readHistory(int channel, double position) const noexcept
     return lerp(fraction, history[static_cast<std::size_t>(indexA)], history[static_cast<std::size_t>(indexB)]);
 }
 
-float GlitchEngine::readCapturedHistory(int channel, double position) const noexcept
-{
-    if (historySize <= 1 || loopLength <= 1)
-        return readHistory(channel, position);
-
-    auto offset = wrapPosition(position) - static_cast<double>(loopStart);
-    if (offset < 0.0)
-        offset += static_cast<double>(historySize);
-
-    const auto length = static_cast<double>(loopLength);
-    if (capturedTransportLoops)
-    {
-        offset = std::fmod(offset, length);
-        if (offset < 0.0)
-            offset += length;
-    }
-    else
-    {
-        offset = std::clamp(offset, 0.0, std::max(0.0, length - 1.0));
-    }
-
-    const auto offsetA = static_cast<int>(std::floor(offset));
-    const auto offsetB = capturedTransportLoops
-        ? (offsetA + 1) % loopLength
-        : std::min(offsetA + 1, loopLength - 1);
-    const auto fraction = static_cast<float>(offset - static_cast<double>(offsetA));
-    const auto indexA = wrapIndex(loopStart + offsetA);
-    const auto indexB = wrapIndex(loopStart + offsetB);
-    const auto& history = (channel == 0 || numChannels == 1) ? historyLeft : historyRight;
-    return lerp(fraction, history[static_cast<std::size_t>(indexA)], history[static_cast<std::size_t>(indexB)]);
-}
-
 int GlitchEngine::millisecondsToSamples(float milliseconds) const noexcept
 {
     return std::max(1, static_cast<int>(std::round(static_cast<double>(milliseconds) * sampleRate / 1000.0)));
 }
 
-void GlitchEngine::captureLoopForSlot(int slotIndex, bool looping) noexcept
+void GlitchEngine::captureLoopForSlot(int slotIndex) noexcept
 {
     const auto& config = slots[static_cast<std::size_t>(slotIndex)].config;
-    const auto durationSamples = millisecondsToSamples(config.lengthMs);
-    auto desiredLength = durationSamples;
+    auto desiredLength = millisecondsToSamples(config.lengthMs);
 
     if (config.effect == EffectType::microloop)
         desiredLength = std::clamp(desiredLength, millisecondsToSamples(2.0f), millisecondsToSamples(50.0f));
 
-    if (!looping && config.effect == EffectType::pitchRise)
-    {
-        // Estimate the source distance consumed by the actual rising rate curve
-        // instead of reserving duration * maximumRate. The latter is safe but
-        // starts the gesture needlessly far in the past. A fixed-size midpoint
-        // integration is deterministic, allocation-free, and only runs on a
-        // trigger edge.
-        constexpr int integrationSteps = 32;
-        const auto intensity = static_cast<double>(std::clamp(config.intensity, 0.0f, 1.0f));
-        const auto exponent = 0.35 + static_cast<double>(config.shape) * 2.65;
-        const auto maxSemitones = 24.0 * intensity;
-        const auto maxRate = std::pow(2.0, maxSemitones / 12.0);
-        double rateSum = 0.0;
-        for (int step = 0; step < integrationSteps; ++step)
-        {
-            const auto progress = (static_cast<double>(step) + 0.5) / static_cast<double>(integrationSteps);
-            const auto shaped = std::pow(progress, exponent);
-            rateSum += std::pow(2.0, maxSemitones * shaped / 12.0);
-        }
-        const auto averageRate = rateSum / static_cast<double>(integrationSteps);
-        const auto safetySamples = static_cast<int>(std::ceil(
-            maxRate * static_cast<double>(millisecondsToSamples(2.0f))));
-        desiredLength = static_cast<int>(std::ceil(static_cast<double>(durationSamples) * averageRate))
-            + safetySamples + 8;
-    }
-    else if (!looping && config.effect == EffectType::pitchDive)
-    {
-        desiredLength += 8;
-    }
-
-    const auto availableLength = std::max(2, historySamplesAvailable - 2);
-    desiredLength = std::clamp(desiredLength, 2, std::max(2, std::min(historySize - 8, availableLength)));
-
+    desiredLength = std::clamp(desiredLength, 2, std::max(2, historySize - 8));
     loopLength = desiredLength;
     loopStart = wrapIndex(writePosition - loopLength - 2);
     streamingTransport = false;
-    capturedTransportLoops = looping;
     transportEngaged = true;
 
     bool reverseIsActive = false;
-    for (const auto& runtime : slots)
-        reverseIsActive |= runtime.active && runtime.config.effect == EffectType::reverse;
+    for (const auto& slot : slots)
+        reverseIsActive |= slot.active && slot.config.effect == EffectType::reverse;
 
     readPosition = reverseIsActive
         ? static_cast<double>(wrapIndex(loopStart + loopLength - 1))
@@ -299,36 +210,24 @@ void GlitchEngine::captureLoopForSlot(int slotIndex, bool looping) noexcept
 void GlitchEngine::startStreamingTransport() noexcept
 {
     streamingTransport = true;
-    capturedTransportLoops = false;
     transportEngaged = true;
     readPosition = static_cast<double>(wrapIndex(writePosition - 2));
 }
 
 void GlitchEngine::refreshTransportAfterRelease() noexcept
 {
-    bool anyLoopSource = false;
-    bool anyCapturedGesture = false;
+    bool anyLoop = false;
     bool anyTape = false;
-
     for (const auto& slot : slots)
     {
-        if (!slot.active || !isTransportEffect(slot.config.effect))
+        if (!slot.active)
             continue;
-
-        anyLoopSource |= isLoopDefiningEffect(slot.config.effect);
-        anyCapturedGesture |= requiresCapturedTransport(slot.config.effect);
+        anyLoop |= isLoopDefiningEffect(slot.config.effect);
         anyTape |= slot.config.effect == EffectType::tapeStop;
     }
 
-    if (anyLoopSource || anyCapturedGesture)
-    {
-        streamingTransport = false;
-        transportEngaged = true;
-    }
-    else if (anyTape)
-    {
-        startStreamingTransport();
-    }
+    if (!anyLoop && anyTape)
+        streamingTransport = true;
 }
 
 GlitchEngine::StereoSample GlitchEngine::processSample(float dryLeft, float dryRight, float globalMix) noexcept
@@ -339,7 +238,6 @@ GlitchEngine::StereoSample GlitchEngine::processSample(float dryLeft, float dryR
     historyLeft[static_cast<std::size_t>(writePosition)] = dryLeft;
     historyRight[static_cast<std::size_t>(writePosition)] = dryRight;
     writePosition = wrapIndex(writePosition + 1);
-    historySamplesAvailable = std::min(historySize, historySamplesAvailable + 1);
 
     float transportWet = 0.0f;
     float crushAmount = 0.0f;
@@ -382,17 +280,17 @@ GlitchEngine::StereoSample GlitchEngine::processSample(float dryLeft, float dryR
             const auto shaped = std::pow(progress, exponent);
             const auto direction = slot.config.effect == EffectType::pitchRise ? 1.0 : -1.0;
             const auto semitones = direction * 24.0 * static_cast<double>(slot.config.intensity)
-                * shaped * static_cast<double>(envelope);
+                * shaped * static_cast<double>(slot.envelope.current);
             playbackRate *= std::pow(2.0, semitones / 12.0);
         }
 
-        if (slot.config.effect == EffectType::tapeStop && envelope > 0.0001f)
+        if (slot.config.effect == EffectType::tapeStop && slot.envelope.current > 0.0001f)
         {
             const auto duration = std::max(1, millisecondsToSamples(slot.config.lengthMs));
             const auto progress = std::clamp(static_cast<double>(slot.activeSamples) / static_cast<double>(duration), 0.0, 1.0);
             const auto exponent = 0.25 + static_cast<double>(slot.config.shape) * 2.75;
             const auto stoppedRate = std::pow(std::max(0.0, 1.0 - progress), exponent);
-            const auto depth = static_cast<double>(slot.config.intensity) * static_cast<double>(envelope);
+            const auto depth = static_cast<double>(slot.config.intensity) * static_cast<double>(slot.envelope.current);
             playbackRate *= 1.0 + depth * (stoppedRate - 1.0);
         }
 
@@ -426,33 +324,19 @@ GlitchEngine::StereoSample GlitchEngine::processSample(float dryLeft, float dryR
                 : std::max(1.0, static_cast<double>(loopLength) * (0.03 + static_cast<double>(stereoIntensity) * 0.17));
 
             if (streamingTransport)
-            {
                 rightReadPosition = wrapPosition(readPosition - spreadSamples);
-            }
             else
             {
                 auto offset = readPosition - static_cast<double>(loopStart);
                 if (offset < 0.0)
                     offset += static_cast<double>(historySize);
-                offset += spreadSamples;
-                if (capturedTransportLoops)
-                {
-                    offset = std::fmod(offset, static_cast<double>(loopLength));
-                }
-                else
-                {
-                    offset = std::clamp(offset, 0.0, static_cast<double>(std::max(0, loopLength - 1)));
-                }
+                offset = std::fmod(offset + spreadSamples, static_cast<double>(loopLength));
                 rightReadPosition = wrapPosition(static_cast<double>(loopStart) + offset);
             }
         }
 
-        auto wetLeft = streamingTransport
-            ? readHistory(0, leftReadPosition)
-            : readCapturedHistory(0, leftReadPosition);
-        auto wetRight = streamingTransport
-            ? readHistory(1, rightReadPosition)
-            : readCapturedHistory(1, rightReadPosition);
+        auto wetLeft = readHistory(0, leftReadPosition);
+        auto wetRight = readHistory(1, rightReadPosition);
 
         if (stereoMode == StereoMode::swap)
             std::swap(wetLeft, wetRight);
@@ -464,28 +348,17 @@ GlitchEngine::StereoSample GlitchEngine::processSample(float dryLeft, float dryR
 
         const auto signedRate = reverse ? -playbackRate : playbackRate;
         if (streamingTransport)
-        {
             readPosition = wrapPosition(readPosition + signedRate);
-        }
         else
         {
             auto offset = readPosition - static_cast<double>(loopStart);
             if (offset < 0.0)
                 offset += static_cast<double>(historySize);
             offset += signedRate;
-
-            if (capturedTransportLoops)
-            {
-                const auto loopLengthDouble = static_cast<double>(std::max(1, loopLength));
-                offset = std::fmod(offset, loopLengthDouble);
-                if (offset < 0.0)
-                    offset += loopLengthDouble;
-            }
-            else
-            {
-                offset = std::clamp(offset, 0.0, static_cast<double>(std::max(0, loopLength - 1)));
-            }
-
+            const auto loopLengthDouble = static_cast<double>(std::max(1, loopLength));
+            offset = std::fmod(offset, loopLengthDouble);
+            if (offset < 0.0)
+                offset += loopLengthDouble;
             readPosition = wrapPosition(static_cast<double>(loopStart) + offset);
         }
     }
@@ -522,7 +395,6 @@ GlitchEngine::StereoSample GlitchEngine::processSample(float dryLeft, float dryR
     {
         transportEngaged = false;
         streamingTransport = false;
-        capturedTransportLoops = true;
     }
 
     return {

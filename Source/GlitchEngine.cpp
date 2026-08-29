@@ -197,6 +197,33 @@ float GlitchEngine::readHistory(int channel, double position) const noexcept
     return lerp(fraction, history[static_cast<std::size_t>(indexA)], history[static_cast<std::size_t>(indexB)]);
 }
 
+float GlitchEngine::readCapturedHistory(int channel, double position) const noexcept
+{
+    if (historySize <= 1 || loopLength <= 1)
+        return readHistory(channel, position);
+
+    // Convert the absolute circular-history position to a fractional offset inside
+    // the active capture, then wrap BOTH interpolation taps inside that region.
+    // Without this, a fractional head near the final captured sample blends with
+    // the next global-history sample, leaking live/unwritten audio into Pitch Rise.
+    auto offset = wrapPosition(position) - static_cast<double>(loopStart);
+    if (offset < 0.0)
+        offset += static_cast<double>(historySize);
+
+    const auto length = static_cast<double>(loopLength);
+    offset = std::fmod(offset, length);
+    if (offset < 0.0)
+        offset += length;
+
+    const auto offsetA = static_cast<int>(std::floor(offset));
+    const auto offsetB = (offsetA + 1) % loopLength;
+    const auto fraction = static_cast<float>(offset - static_cast<double>(offsetA));
+    const auto indexA = wrapIndex(loopStart + offsetA);
+    const auto indexB = wrapIndex(loopStart + offsetB);
+    const auto& history = (channel == 0 || numChannels == 1) ? historyLeft : historyRight;
+    return lerp(fraction, history[static_cast<std::size_t>(indexA)], history[static_cast<std::size_t>(indexB)]);
+}
+
 int GlitchEngine::millisecondsToSamples(float milliseconds) const noexcept
 {
     return std::max(1, static_cast<int>(std::round(static_cast<double>(milliseconds) * sampleRate / 1000.0)));
@@ -370,8 +397,12 @@ GlitchEngine::StereoSample GlitchEngine::processSample(float dryLeft, float dryR
             }
         }
 
-        auto wetLeft = readHistory(0, leftReadPosition);
-        auto wetRight = readHistory(1, rightReadPosition);
+        auto wetLeft = streamingTransport
+            ? readHistory(0, leftReadPosition)
+            : readCapturedHistory(0, leftReadPosition);
+        auto wetRight = streamingTransport
+            ? readHistory(1, rightReadPosition)
+            : readCapturedHistory(1, rightReadPosition);
 
         if (stereoMode == StereoMode::swap)
             std::swap(wetLeft, wetRight);

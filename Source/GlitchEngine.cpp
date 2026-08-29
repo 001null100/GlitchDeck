@@ -259,7 +259,11 @@ GlitchEngine::StereoSample GlitchEngine::processSample(float dryLeft, float dryR
 
         if (isTransportEffect(slot.config.effect))
         {
-            transportWet = std::max(transportWet, weight);
+            // Temporal effects replace the live signal while engaged. Intensity
+            // controls the effect's own depth/character; Global Mix is the wet/dry
+            // control. Multiplying this by intensity caused a permanent dry leak
+            // (18% at the old 0.82 defaults) even after the attack had completed.
+            transportWet = std::max(transportWet, envelope);
             anyTransportActive |= slot.active;
             if (weight > dominantTransportWeight)
             {

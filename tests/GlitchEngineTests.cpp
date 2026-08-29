@@ -109,6 +109,30 @@ void pitchDiveUsesAOneShotCapture()
     expectNear(test, output.left, 86.0f);
 }
 
+void freshInstanceNeverCapturesUnwrittenHistory()
+{
+    constexpr auto test = "freshInstanceNeverCapturesUnwrittenHistory";
+    GlitchEngine engine;
+    engine.prepare(1000.0, 2);
+
+    auto config = configFor(GlitchEngine::EffectType::reverse);
+    config.lengthMs = 1000.0f;
+    engine.setSlotConfig(0, config);
+
+    // Only four samples exist even though the configured capture asks for one second.
+    // Use values far from zero so an accidental trip through the zero-filled history
+    // buffer is immediately visible.
+    for (int i = 0; i < 4; ++i)
+        engine.processSample(10.0f + static_cast<float>(i), 10.0f + static_cast<float>(i), 1.0f);
+
+    engine.trigger(0, true);
+    for (int i = 0; i < 6; ++i)
+    {
+        const auto output = engine.processSample(20.0f + static_cast<float>(i), 20.0f + static_cast<float>(i), 1.0f);
+        expectBetween(test, output.left, 10.0f, 11.0f);
+    }
+}
+
 void stutterStillLoops()
 {
     constexpr auto test = "stutterStillLoops";
@@ -172,6 +196,7 @@ int main()
     reverseStandaloneStopsAtCaptureStart();
     pitchRiseDoesNotWrapOrReadLiveAudio();
     pitchDiveUsesAOneShotCapture();
+    freshInstanceNeverCapturesUnwrittenHistory();
     stutterStillLoops();
     reverseModifiesExistingStutterWithoutRecapture();
     releasingStutterKeepsReverseOnTheSharedLoop();

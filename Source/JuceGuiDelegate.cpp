@@ -4,6 +4,7 @@
 #include <clap/ext/gui.h>
 
 #include <algorithm>
+#include <cmath>
 #include <cstring>
 
 JuceGuiDelegate::JuceGuiDelegate(GlitchDeckPlugin& plugin) noexcept
@@ -45,7 +46,7 @@ bool JuceGuiDelegate::create(const char* api, bool floating) noexcept
     {
         juceInitialiser_ = std::make_unique<juce::ScopedJuceInitialiser_GUI>();
         editor_ = std::make_unique<GlitchDeckEditor>(plugin_);
-        editor_->setSize(static_cast<int>(width_), static_cast<int>(height_));
+        applyLogicalEditorSize();
         editor_->setVisible(false);
         return true;
     }
@@ -69,10 +70,17 @@ void JuceGuiDelegate::destroy() noexcept
     juceInitialiser_.reset();
 }
 
-bool JuceGuiDelegate::setScale(double) noexcept
+bool JuceGuiDelegate::setScale(double scale) noexcept
 {
-    // JUCE handles the native Windows display scale for the embedded peer. Returning
-    // false tells the host that GlitchDeck intentionally ignores an explicit override.
+    if (!std::isfinite(scale) || scale <= 0.0)
+        return false;
+
+    // Win32 CLAP dimensions are physical pixels while JUCE component bounds are
+    // logical pixels. JUCE still owns the actual native DPI scaling, so we return
+    // false (the explicit override is ignored) but retain Bitwig's scale value to
+    // translate every CLAP size to/from the logical JUCE editor size.
+    scale_ = std::clamp(scale, 0.5, 4.0);
+    applyLogicalEditorSize();
     return false;
 }
 
@@ -93,10 +101,36 @@ bool JuceGuiDelegate::hide() noexcept
     return true;
 }
 
+std::uint32_t JuceGuiDelegate::toPhysical(std::uint32_t logical) const noexcept
+{
+    return std::max<std::uint32_t>(1, static_cast<std::uint32_t>(std::lround(static_cast<double>(logical) * scale_)));
+}
+
+std::uint32_t JuceGuiDelegate::toLogical(std::uint32_t physical) const noexcept
+{
+    return std::max<std::uint32_t>(1, static_cast<std::uint32_t>(std::lround(static_cast<double>(physical) / scale_)));
+}
+
+std::uint32_t JuceGuiDelegate::physicalWidth() const noexcept
+{
+    return toPhysical(logicalWidth_);
+}
+
+std::uint32_t JuceGuiDelegate::physicalHeight() const noexcept
+{
+    return toPhysical(logicalHeight_);
+}
+
+void JuceGuiDelegate::applyLogicalEditorSize() noexcept
+{
+    if (editor_ != nullptr)
+        editor_->setSize(static_cast<int>(logicalWidth_), static_cast<int>(logicalHeight_));
+}
+
 bool JuceGuiDelegate::getSize(std::uint32_t& width, std::uint32_t& height) noexcept
 {
-    width = width_;
-    height = height_;
+    width = physicalWidth();
+    height = physicalHeight();
     return editor_ != nullptr;
 }
 
@@ -111,8 +145,12 @@ bool JuceGuiDelegate::getResizeHints(clap_gui_resize_hints_t& hints) noexcept
 
 bool JuceGuiDelegate::adjustSize(std::uint32_t& width, std::uint32_t& height) noexcept
 {
-    width = std::clamp<std::uint32_t>(width, 820, 1500);
-    height = std::clamp<std::uint32_t>(height, 570, 1000);
+    auto logicalWidth = toLogical(width);
+    auto logicalHeight = toLogical(height);
+    logicalWidth = std::clamp<std::uint32_t>(logicalWidth, 820, 1500);
+    logicalHeight = std::clamp<std::uint32_t>(logicalHeight, 570, 1000);
+    width = toPhysical(logicalWidth);
+    height = toPhysical(logicalHeight);
     return true;
 }
 
@@ -120,10 +158,10 @@ bool JuceGuiDelegate::setSize(std::uint32_t width, std::uint32_t height) noexcep
 {
     if (!adjustSize(width, height))
         return false;
-    width_ = width;
-    height_ = height;
-    if (editor_ != nullptr)
-        editor_->setSize(static_cast<int>(width_), static_cast<int>(height_));
+
+    logicalWidth_ = toLogical(width);
+    logicalHeight_ = toLogical(height);
+    applyLogicalEditorSize();
     return true;
 }
 
@@ -138,7 +176,7 @@ bool JuceGuiDelegate::setParent(const clap_window_t& window) noexcept
         editor_->removeFromDesktop();
 
     editor_->addToDesktop(0, window.win32);
-    editor_->setSize(static_cast<int>(width_), static_cast<int>(height_));
+    applyLogicalEditorSize();
     return editor_->isOnDesktop();
 #else
     (void)window;

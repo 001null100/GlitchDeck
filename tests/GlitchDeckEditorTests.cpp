@@ -25,6 +25,8 @@ int main()
             {
                 const auto* child = editor.getChildComponent(i);
                 CHECK(child != nullptr);
+                // The hidden tooltip is an overlay, not a laid-out editor control.
+                if (dynamic_cast<const juce::TooltipWindow*>(child) != nullptr) continue;
                 CHECK(!child->getBounds().isEmpty());
                 CHECK(editor.getLocalBounds().contains(child->getBounds()));
             }

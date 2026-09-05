@@ -107,10 +107,10 @@ void GlitchEngine::trigger(int slotIndex, bool down) noexcept
                 anotherTransportIsActive |= other.active && isTransportEffect(other.config.effect);
             }
 
-            if (isLoopDefiningEffect(slot.config.effect))
-                captureLoopForSlot(slotIndex);
-            else if (!anotherTransportIsActive)
+            if (slot.config.effect == EffectType::tapeStop && !anotherTransportIsActive)
                 startStreamingTransport();
+            else if (isLoopDefiningEffect(slot.config.effect))
+                captureLoopForSlot(slotIndex);
             else
                 transportEngaged = true;
         }
@@ -140,7 +140,10 @@ bool GlitchEngine::isTransportEffect(EffectType type) noexcept
 bool GlitchEngine::isLoopDefiningEffect(EffectType type) noexcept
 {
     return type == EffectType::stutter
-        || type == EffectType::microloop;
+        || type == EffectType::microloop
+        || type == EffectType::reverse
+        || type == EffectType::pitchDive
+        || type == EffectType::pitchRise;
 }
 
 int GlitchEngine::wrapIndex(int index) const noexcept
@@ -214,20 +217,17 @@ void GlitchEngine::startStreamingTransport() noexcept
 void GlitchEngine::refreshTransportAfterRelease() noexcept
 {
     bool anyLoop = false;
-    bool anyTransport = false;
+    bool anyTape = false;
     for (const auto& slot : slots)
     {
-        if (!slot.active || !isTransportEffect(slot.config.effect))
+        if (!slot.active)
             continue;
-        anyTransport = true;
         anyLoop |= isLoopDefiningEffect(slot.config.effect);
+        anyTape |= slot.config.effect == EffectType::tapeStop;
     }
 
-    if (!anyLoop && anyTransport)
-    {
+    if (!anyLoop && anyTape)
         streamingTransport = true;
-        transportEngaged = true;
-    }
 }
 
 GlitchEngine::StereoSample GlitchEngine::processSample(float dryLeft, float dryRight, float globalMix) noexcept
@@ -259,7 +259,11 @@ GlitchEngine::StereoSample GlitchEngine::processSample(float dryLeft, float dryR
 
         if (isTransportEffect(slot.config.effect))
         {
-            transportWet = std::max(transportWet, weight);
+            // Temporal effects replace the live signal while engaged. Intensity
+            // controls the effect's own depth/character; Global Mix is the wet/dry
+            // control. Multiplying this by intensity caused a permanent dry leak
+            // (18% at the old 0.82 defaults) even after the attack had completed.
+            transportWet = std::max(transportWet, envelope);
             anyTransportActive |= slot.active;
             if (weight > dominantTransportWeight)
             {

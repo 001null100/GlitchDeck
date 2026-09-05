@@ -2,92 +2,82 @@
 
 Put the native `GlitchDeck.clap` after an audio-producing instrument/effect chain in Bitwig, feed it something rhythmically obvious, and keep the transport running.
 
-## 1. Basic load
+This candidate deliberately restores the effect engine to the first published alpha (`v1-alpha-6`, commit `8fbc09bafb0356fcee868074230cc07d54f97d22`). Judge Reverse/Pitch behavior against that version rather than the one-shot experiments from PR #4 builds 42-55.
+
+## 1. Basic load / editor geometry
 
 - Confirm `GlitchDeck.clap` scans and opens without warnings.
+- Confirm the complete editor is visible, especially the right edge and Global Mix area.
+- On a Windows display using non-100% scaling if available, resize the Bitwig plug-in window smaller and larger. The embedded editor should follow the host frame instead of remaining physically wider and clipped on the right.
+- The branch uses null-clap's upstream `PhysicalPixelGuiSizing` path from build 43 rather than a GlitchDeck-local DPI workaround.
 - Confirm dry audio passes unchanged when no trigger is active.
-- Confirm Global Mix at 0% is clean and 100% is fully available to the gestures.
 
-## 2. Direct controller input / MIDI Learn
+## 2. MIDI routing control test first
 
-GlitchDeck defaults to:
+GlitchDeck defaults to CC20-27 on MIDI channel 16.
 
-1. CC20, channel 16: Stutter
-2. CC21, channel 16: Microloop
-3. CC22, channel 16: Reverse
-4. CC23, channel 16: Tape Stop
-5. CC24, channel 16: Pitch Dive
-6. CC25, channel 16: Pitch Rise
-7. CC26, channel 16: Bitcrush
-8. CC27, channel 16: Dropout
+This build opts into null-clap's reusable hybrid audio/note-input host-routing profile. The framework CI independently verifies that a raw channel-16 CC (`0xBF`, CC20, value 127) passed in a CLAP process event list reaches `Plugin::onEvent()` unchanged.
 
-Press and release each configured pad. A Nektar `Trg` pad should send 127 on press and 0 on release, so the effect should follow the physical hold exactly.
+Repeat the decisive Bitwig test first:
 
-Then test Learn explicitly:
+1. Put Bitwig's MIDI CC device immediately upstream of GlitchDeck.
+2. Send CC20, channel 16, value 127 then 0.
+3. Watch **MIDI IN**.
 
-1. Select a slot.
-2. Click **LEARN**.
-3. Hit any configured pad.
-4. Confirm the binding updates immediately, for example `CC 20 · CH 16`.
+Expected if Bitwig now constructs the note/MIDI route for this hybrid CLAP descriptor:
 
-If Learn stays waiting, report that specifically. It means the raw CLAP MIDI event path is not reaching GlitchDeck and is the highest-priority bug.
+- `MIDI IN · CC20 CH16 127`
+- `MIDI IN · CC20 CH16 0`
 
-## 3. Standalone transport gestures
+Then test the physical controller and Learn.
 
-Test Reverse, Tape Stop, Pitch Dive, and Pitch Rise individually before combining them.
+Interpret failures precisely:
 
-- Reverse alone should move backward through recent audio instead of falling into a short repeating loop.
-- Pitch Dive/Rise alone should behave as streaming rate gestures instead of implicitly becoming loop effects.
-- Tape Stop alone should decelerate the streaming history head.
-- Releasing a Stutter/Microloop while Reverse, Pitch, or Tape Stop remains held should leave the remaining gesture running without getting trapped in the old loop region.
+- **Bitwig-generated CC reaches MIDI IN:** framework/host routing is fixed; any remaining physical-controller failure is upstream of the device chain.
+- **Bitwig-generated CC still says `NO HOST MIDI`:** do not debug GlitchDeck's CC parser. The host is still not putting the event in this CLAP instance's process event list, so the next fix belongs at the null-clap/host-routing boundary.
+- **MIDI IN updates but Learn/trigger fails:** that is a GlitchDeck event interpretation bug.
+
+## 3. Restored alpha-6 transport gestures
+
+Test each temporal effect alone with the same source you used when the first alpha felt right.
+
+- **Reverse:** should have the original looping captured-reverse character from alpha-6. It intentionally wraps the captured region rather than stopping at an endpoint.
+- **Pitch Dive:** should use the original captured-loop playback-rate curve.
+- **Pitch Rise:** should use the original captured-loop playback-rate curve, including its original modulo read-head behavior. There is no one-shot safety/capture redesign in this candidate.
+- **Tape Stop:** remains the original standalone recent-history streaming/decelerating case.
+- **Stutter / Microloop:** retain the original loop behavior.
+
+The regression suite is now a fidelity suite. At a deterministic 1 kHz test rate it freezes the original Reverse loop sequence, Stutter sequence, Pitch Dive capture start, Pitch Rise fractional read-head sequence, and Reverse-over-Stutter recapture behavior.
 
 ## 4. Combinations
 
-Try these deliberately:
+The original alpha grammar is restored here too. Reverse, Pitch Dive, and Pitch Rise are themselves loop-defining capture gestures, so triggering one over an existing transport gesture can recapture the shared region. Do not expect the later PR #4 modifier-only semantics.
 
-- Hold Stutter, then add Pitch Dive.
-- Hold Stutter, tap/hold Reverse, then release Reverse while Stutter continues.
-- Hold Stutter and add Tape Stop.
-- Hold Microloop and add Bitcrush.
-- Hold any temporal gesture and add Dropout.
+Try the combinations you actually care about musically and compare them against your memory of alpha-6. If one combination is worse than alpha-6 while the standalone effects match, report that combination specifically and we can refine it without rewriting the whole transport model again.
 
-The combinations should sound like modifications of one gesture, especially Stutter + Reverse/Pitch/Tape, rather than unrelated effects being restarted.
+## 5. Latch and quantization
 
-## 5. Latch
+- Latch: a short press toggles the slot on; the next press toggles it off.
+- Quantization: test Free, 1/16, 1/8, 1/4, and 1 Bar while Bitwig is playing.
+- Release remains immediate.
 
-Enable Latch on a slot. A short press should toggle the effect on; the next press should toggle it off. The CC release value should not cancel a latched gesture.
-
-## 6. Quantization
-
-With Bitwig playing, test Free, 1/16, 1/8, and 1/4. Onsets should wait for the selected host grid boundary. Release is intentionally immediate in this alpha.
-
-Also test **1 Bar** in both 4/4 and a non-4/4 meter such as 3/4 or 7/8. The onset should follow Bitwig's current bar boundaries rather than assuming four quarter-note beats.
-
-## 7. MIDI remap
-
-Use Learn to bind one slot to a different CC or Note message. Verify the old binding stops addressing it and the new binding starts addressing it. Also verify channel filtering works with a different MIDI channel.
-
-While Learn is armed, select a different trigger with right-click. Learn should cancel rather than remain invisibly armed on the previous trigger. Right-clicking a pad should select it without firing its glitch; left-click still performs the pad.
-
-## 8. UI / keyboard / automation
+## 6. UI / keyboard / automation
 
 - Pads should visibly light while active.
 - Clicking and holding a pad should behave like holding MIDI.
 - Right-clicking a pad should select it without triggering audio.
 - Number keys 1-8 should trigger slots only while the plugin UI owns keyboard focus.
-- Changing the selected slot should retarget the lower editor without changing audio state.
 - Host automation of Trigger 1-8 should create the same performance edges as UI/MIDI triggering.
 
-## 9. Things worth reporting precisely
+## 7. What to report
 
-For timing or audio bugs, note:
+The most useful pass for this candidate is compact:
 
-- Bitwig buffer size / sample rate
-- effect(s) active
-- hold vs latch
-- quantization mode
-- incoming binding, e.g. CC20 channel 16
-- whether the trigger came from MIDI, mouse, automation, or keyboard
-- whether the issue occurs only when combining effects
+- scaling: fixed / broken
+- Reverse vs alpha-6: same / different, and how
+- Pitch Rise vs alpha-6: same / different, and how
+- any other effect that no longer matches alpha-6
+- exact result of **Bitwig MIDI CC device -> MIDI IN**
+- if MIDI arrives, whether Learn and CC20-27 triggering work
 
-Clicks at intentional hard glitch boundaries can be stylistic; clicks specifically on activation/release or unrelated to the configured gesture are bugs.
+For DSP differences, describe the audible fault rather than only saying "broken": restart/wrap character, wrong pitch direction/curve, silence, frozen audio, discontinuity/click, wrong capture length, or wrong combination behavior.

@@ -34,10 +34,18 @@ jobs:
         shell: pwsh
         run: cmake --build build --config Release --parallel
 
-      - name: Test GlitchEngine
+      - name: Test DSP, plugin contracts, editor and framework
         shell: pwsh
         run: ctest --test-dir build -C Release --output-on-failure
 
+      - name: Upload rendered editor layouts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: GlitchDeck-editor-Windows
+          path: build/GlitchDeck-*.png
+          if-no-files-found: warn
+          retention-days: 14
       - name: Validate CLAP
         shell: pwsh
         run: |
@@ -62,6 +70,7 @@ jobs:
           Compress-Archive -Path "$dist/GlitchDeck.clap" -DestinationPath "$dist/GlitchDeck-Windows-CLAP.zip" -Force
           Copy-Item docs/TESTING.md "$dist/TESTING.md"
           Copy-Item docs/MIDI_SETUP.md "$dist/MIDI_SETUP.md"
+          Copy-Item docs/GLITCHDECK_0_2_1.md "$dist/GLITCHDECK_0_2_1.md"
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v6
@@ -83,12 +92,12 @@ jobs:
             $tag = "v1-alpha-pr${{ github.event.pull_request.number }}-${{ github.run_number }}"
             $target = "${{ github.event.pull_request.head.sha }}"
             $title = "GlitchDeck v1 alpha PR #${{ github.event.pull_request.number }} build ${{ github.run_number }}"
-            $notes = "Validated native null-clap Windows build from PR #${{ github.event.pull_request.number }} at $target. The GlitchEngine regression suite and clap-validator both pass before publication. Raw MIDI CC pad input is handled directly through the CLAP note port. See TESTING.md and MIDI_SETUP.md."
+            $notes = "Validated native null-clap Windows build from PR #${{ github.event.pull_request.number }} at $target. GlitchDeck 0.2.1 preserves the alpha DSP while hardening MIDI/GUI gates, quantized timing, Learn, and panic handling. DSP, plugin, editor and framework tests plus clap-validator pass before publication. Interactive Bitwig MIDI delivery still requires verification. See GLITCHDECK_0_2_1.md, TESTING.md and MIDI_SETUP.md."
           }
           else {
             $tag = "v1-alpha-${{ github.run_number }}"
             $target = "${{ github.sha }}"
             $title = "GlitchDeck v1 alpha ${{ github.run_number }}"
-            $notes = "Validated native null-clap Windows build from $target. The GlitchEngine regression suite and clap-validator both pass before publication. Raw MIDI CC pad input is handled directly through the CLAP note port. See TESTING.md and MIDI_SETUP.md."
+            $notes = "Validated native null-clap Windows build from $target. GlitchDeck 0.2.1 preserves the alpha DSP while hardening MIDI/GUI gates, quantized timing, Learn, and panic handling. DSP, plugin, editor and framework tests plus clap-validator pass before publication. Interactive Bitwig MIDI delivery still requires verification. See GLITCHDECK_0_2_1.md, TESTING.md and MIDI_SETUP.md."
           }
           gh release create $tag dist/* --prerelease --target $target --title $title --notes $notes

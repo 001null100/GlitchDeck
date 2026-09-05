@@ -37,5 +37,5 @@ private:
     GlitchDeckPlugin& plugin_;
     std::unique_ptr<juce::ScopedJuceInitialiser_GUI> juceInitialiser_;
     std::unique_ptr<GlitchDeckEditor> editor_;
-    nullclap::PhysicalPixelGuiSizing sizing_ { 980, 660, 820, 570, 1500, 1000 };
+    nullclap::PhysicalPixelGuiSizing sizing_ { 1040, 740, 820, 620, 1800, 1100 };
 };

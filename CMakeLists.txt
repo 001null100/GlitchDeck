@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.24)
-project(GlitchDeck VERSION 0.2.0 LANGUAGES C CXX)
+project(GlitchDeck VERSION 0.2.1 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -7,6 +7,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 include(FetchContent)
 include(CTest)
+option(GLITCHDECK_BUILD_PLUGIN "Build the JUCE editor and CLAP module" ON)
 
 # Immutable shared-framework revision: backpressure-safe automation, bounded
 # transactional state loading, numeric/event validation, and Release-active tests.
@@ -22,6 +23,7 @@ set(NULLCLAP_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(NULLCLAP_BUILD_TESTS ${BUILD_TESTING} CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(null_clap)
 
+if(GLITCHDECK_BUILD_PLUGIN)
 # JUCE is a drawing/window toolkit only. GlitchDeck does not use JUCE's audio
 # processor, parameter, MIDI, state, VST3, or CLAP wrapper layers.
 FetchContent_Declare(
@@ -61,6 +63,8 @@ if(MSVC)
     target_compile_options(GlitchDeck PRIVATE /utf-8)
 endif()
 
+endif()
+
 if(BUILD_TESTING)
     add_executable(GlitchEngineTests
         tests/GlitchEngineTests.cpp
@@ -69,4 +73,33 @@ if(BUILD_TESTING)
     )
     target_include_directories(GlitchEngineTests PRIVATE Source)
     add_test(NAME GlitchEngineTests COMMAND GlitchEngineTests)
+    add_executable(GlitchDeckContractTests
+        tests/GlitchDeckContractTests.cpp
+        Source/GlitchDeckPlugin.cpp
+        Source/GlitchEngine.cpp
+    )
+    target_include_directories(GlitchDeckContractTests PRIVATE Source)
+    target_compile_definitions(GlitchDeckContractTests PRIVATE GLITCHDECK_HEADLESS_TEST=1)
+    target_link_libraries(GlitchDeckContractTests PRIVATE nullclap::nullclap)
+    if(MSVC)
+        target_compile_options(GlitchDeckContractTests PRIVATE /utf-8)
+    endif()
+    add_test(NAME GlitchDeckContracts COMMAND GlitchDeckContractTests)
+    if(GLITCHDECK_BUILD_PLUGIN)
+        add_executable(GlitchDeckEditorTests
+            tests/GlitchDeckEditorTests.cpp
+            Source/GlitchDeckEditor.cpp
+            Source/GlitchDeckPlugin.cpp
+            Source/GlitchEngine.cpp
+        )
+        target_include_directories(GlitchDeckEditorTests PRIVATE Source)
+        target_compile_definitions(GlitchDeckEditorTests PRIVATE
+            GLITCHDECK_HEADLESS_TEST=1 JUCE_STANDALONE_APPLICATION=1
+            JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0)
+        target_link_libraries(GlitchDeckEditorTests PRIVATE nullclap::nullclap juce::juce_gui_extra)
+        if(MSVC)
+            target_compile_options(GlitchDeckEditorTests PRIVATE /utf-8)
+        endif()
+        add_test(NAME GlitchDeckEditor COMMAND GlitchDeckEditorTests)
+    endif()
 endif()

@@ -51,7 +51,15 @@ jobs:
       - name: Build
         run: cmake --build build-linux --parallel 2
       - name: Test DSP and framework contracts
-        run: ctest --test-dir build-linux --output-on-failure
+        run: xvfb-run -a ctest --test-dir build-linux --output-on-failure
+      - name: Upload rendered editor layouts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: GlitchDeck-editor-Linux
+          path: build-linux/GlitchDeck-*.png
+          if-no-files-found: warn
+          retention-days: 14
       - name: Validate Linux CLAP
         shell: bash
         run: |

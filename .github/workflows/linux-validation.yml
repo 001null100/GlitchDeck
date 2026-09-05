@@ -36,7 +36,7 @@ jobs:
       - name: Install GUI build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libasound2-dev libx11-dev libxext-dev libxinerama-dev libxrandr-dev libxcursor-dev libxrender-dev libfreetype6-dev libfontconfig1-dev libgl1-mesa-dev xvfb
+          sudo apt-get install -y libasound2-dev libx11-dev libxext-dev libxi-dev libxinerama-dev libxrandr-dev libxcursor-dev libxrender-dev libfreetype6-dev libfontconfig1-dev libgl1-mesa-dev xvfb
       - name: Configure native CLAP and tests
         run: cmake -S . -B build-linux -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON
       - name: Archive framework sources for reproducible contract tests

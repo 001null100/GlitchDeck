@@ -8,17 +8,18 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 include(FetchContent)
 include(CTest)
 
-# Pin host plumbing to the exact null-clap revision under Bitwig validation for
-# explicit MIDI-controlled audio-effect role metadata, raw MIDI process delivery,
-# physical-pixel GUI sizing, process context, and state.
+# Immutable shared-framework revision: backpressure-safe automation, bounded
+# transactional state loading, numeric/event validation, and Release-active tests.
+# GlitchDeck keeps its explicit MIDI/audio roles and existing DSP independently.
 FetchContent_Declare(
     null_clap
     GIT_REPOSITORY https://github.com/001null100/null-clap.git
-    GIT_TAG 04519c11d6cd0f311cad55be91e534366cbc9b8d
+    GIT_TAG 9de3106360f324ee4b08906595c54a3e138f6cb7
     GIT_SHALLOW FALSE
 )
 set(NULLCLAP_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
-set(NULLCLAP_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+# A consumer build should test the exact host plumbing it ships, not just the DSP.
+set(NULLCLAP_BUILD_TESTS ${BUILD_TESTING} CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(null_clap)
 
 # JUCE is a drawing/window toolkit only. GlitchDeck does not use JUCE's audio

@@ -3,8 +3,10 @@
 This update preserves the alpha-6 effect algorithms, existing parameter/port IDs,
 MIDI CC20-27/channel-16 defaults, stereo audio topology, and NCLP v1 state format.
 The shared framework is pinned to `9de3106360f324ee4b08906595c54a3e138f6cb7`.
-The engine's existing wet-only envelope and Reverse/Pitch Rise regression tests
-are retained rather than replacing the sound with new effect algorithms.
+The engine's existing alpha envelopes and Reverse/Pitch Rise regression tests
+are retained rather than replacing the sound with new effect algorithms. Temporal
+effects are fully wet after the attack settles; attack/release still crossfade
+between captured and live audio. Intensity does not add a permanent dry blend.
 
 ## Fixed performance boundaries
 

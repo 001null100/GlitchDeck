@@ -129,7 +129,7 @@ GlitchDeckEditor::GlitchDeckEditor(GlitchDeckPlugin& plugin) : plugin_(plugin)
     globalMix_.setRange(0.0, 1.0, 0.001);
     globalMix_.setColour(juce::Slider::trackColourId, accent);
     globalMix_.setDoubleClickReturnValue(true, 1.0);
-    globalMix_.setTooltip("100% is fully wet while an effect is engaged. Double-click resets to 100%.");
+    globalMix_.setTooltip("100% is fully wet after the attack settles. Attack/release crossfade. Double-click resets to 100%.");
     globalMix_.setTitle("Global mix percentage");
     setPercentFormat(globalMix_);
     bindSlider(globalMix_, [] { return glitchdeck::ids::mix; });
@@ -222,7 +222,7 @@ GlitchDeckEditor::GlitchDeckEditor(GlitchDeckPlugin& plugin) : plugin_(plugin)
     intensitySlider_.setTooltip("Effect strength, not a dry/wet blend. Double-click restores this pad's default.");
     lengthSlider_.setTooltip("Capture duration in milliseconds. A change at the onset applies to that capture.");
     attackSlider_.setTooltip("Fade-in time in milliseconds.");
-    releaseSlider_.setTooltip("Fade-out time in milliseconds. A fully wet effect does not leak dry audio under its envelope.");
+    releaseSlider_.setTooltip("Fade-out time in milliseconds. The alpha envelope crossfades from the captured effect back to live audio.");
     shapeSlider_.setTooltip("Effect-specific motion/shape. Double-click resets to 50%.");
     bindSlider(intensitySlider_, [this] { return plugin_.slotIds(selectedSlot_).intensity; });
     bindSlider(lengthSlider_, [this] { return plugin_.slotIds(selectedSlot_).length; });

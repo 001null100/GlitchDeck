@@ -19,12 +19,35 @@ jobs:
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
+      - name: Record exact build sources
+        run: |
+          git rev-parse HEAD | tee BUILD_SOURCE.txt
+          git status --porcelain
+          git ls-files -s Source CMakeLists.txt >> BUILD_SOURCE.txt
+          git archive --format=tar.gz -o GlitchDeck-build-source.tar.gz HEAD
+      - name: Upload source provenance
+        uses: actions/upload-artifact@v4
+        with:
+          name: GlitchDeck-build-source
+          path: |
+            GlitchDeck-build-source.tar.gz
+            BUILD_SOURCE.txt
+          retention-days: 14
       - name: Install GUI build dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y libasound2-dev libx11-dev libxext-dev libxinerama-dev libxrandr-dev libxcursor-dev libxrender-dev libfreetype6-dev libfontconfig1-dev libgl1-mesa-dev xvfb
       - name: Configure native CLAP and tests
         run: cmake -S . -B build-linux -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON
+      - name: Archive framework sources for reproducible contract tests
+        run: |
+          tar --exclude=.git -czf GlitchDeck-contract-dependencies.tar.gz -C build-linux/_deps null_clap-src clap-src clap_helpers-src
+      - name: Upload exact contract dependencies
+        uses: actions/upload-artifact@v4
+        with:
+          name: GlitchDeck-contract-dependencies
+          path: GlitchDeck-contract-dependencies.tar.gz
+          retention-days: 14
       - name: Build
         run: cmake --build build-linux --parallel 2
       - name: Test DSP and framework contracts

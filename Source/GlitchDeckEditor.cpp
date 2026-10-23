@@ -421,8 +421,8 @@ void GlitchDeckEditor::refreshMidiLearnButton()
     const auto learning = plugin_.isMidiLearning(selectedSlot_);
     midiLearnButton_.setToggleState(learning, juce::dontSendNotification);
     midiLearnButton_.setButtonText(learning
-        ? "LEARNING… HIT A PAD"
-        : "LEARN  ·  " + toJuce(plugin_.midiBindingText(selectedSlot_)));
+        ? toJuce("LEARNING… HIT A PAD")
+        : toJuce("LEARN  ·  ") + toJuce(plugin_.midiBindingText(selectedSlot_)));
 }
 
 void GlitchDeckEditor::timerCallback()

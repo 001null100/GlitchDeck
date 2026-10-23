@@ -10,11 +10,12 @@ include(CTest)
 
 # Pin host plumbing to the exact null-clap revision validated for GlitchDeck's
 # raw MIDI note port, process/transport context, process event routing,
-# writable-parameter state persistence, and physical-pixel GUI sizing.
+# writable-parameter state persistence, physical-pixel GUI sizing, and the
+# host timer-support that drives the JUCE editor on Linux/X11.
 FetchContent_Declare(
     null_clap
     GIT_REPOSITORY https://github.com/001null100/null-clap.git
-    GIT_TAG 8612a19fbe7fbe81b249c22e1593da18bb998b97
+    GIT_TAG 1245cdfb1d3d34c03ab5beaec9456ef8128126af
     GIT_SHALLOW FALSE
 )
 set(NULLCLAP_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
